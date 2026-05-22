@@ -49,6 +49,9 @@ stages:
 
 ci:
   provider: github-actions
+  # Branch/ref where the Gridfire workflow files are installed. Change
+  # this for repos whose default branch is not "main" (HTTPie uses
+  # "master").
   workflow_ref: "master"
   build:
     workflow: ".github/workflows/gridfire-build.yml"

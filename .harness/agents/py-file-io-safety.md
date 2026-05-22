@@ -33,4 +33,8 @@ Severity calibration:
 - Grade D/F when a default output contract changes in a way that breaks shell pipelines without explicit acceptance-criteria intent.
 - Grade C for local cleanup or wording issues that do not affect user data or command behavior.
 
-Return your normal JSON reviewer result.
+Output contract:
+
+- Return JSON only: `{"grade":"A|B|C|D|F","rationale":"...","issues":[{"file":"path","line":123,"severity":"info|warning|error","contract_level":"advisory|strong_convention|gate","message":"...","suggestion":"..."}]}`.
+- D/F grades must include at least one actionable issue with `file`, `severity`, `contract_level`, `message`, and `suggestion`; include `line` when a changed line or nearby line is available.
+- If you cannot name a concrete actionable issue, do not emit D/F. Use C or better with a rationale instead.
