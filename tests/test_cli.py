@@ -7,7 +7,7 @@ from requests.exceptions import InvalidSchema
 import httpie.cli.argparser
 from httpie.cli import constants
 from httpie.cli.definition import parser
-from httpie.cli.argtypes import KeyValueArg, KeyValueArgType
+from httpie.cli.argtypes import KeyValueArg, KeyValueArgType, SessionNameValidator
 from httpie.cli.requestitems import RequestItems
 from httpie.status import ExitStatus
 from httpie.utils import load_json_preserve_order_and_dupe_keys
@@ -190,6 +190,57 @@ def test_url_leading_colon_slash_slash(program_name, url_arg, parsed_url):
 def test_url_colon_slash_slash_only():
     r = http('://', tolerate_error_exit_status=True)
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
+
+
+def test_session_ro_sets_dest():
+    # harness:criterion=c-session-ro-sets-dest
+    args = parser.parse_args(
+        args=['--session-ro', 'mysession', 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'mysession'
+
+
+def test_session_read_only_dest_unchanged():
+    # harness:criterion=c-session-read-only-dest-unchanged
+    args = parser.parse_args(
+        args=[
+            '--session-read-only',
+            'mysession',
+            'GET',
+            'http://example.com'
+        ],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'mysession'
+
+
+def test_session_ro_validator_named_session():
+    # harness:criterion=c-session-ro-validator-accepts-named-session
+    validator = SessionNameValidator(
+        'Session name contains invalid characters.'
+    )
+    assert validator('mysession') == 'mysession'
+
+    args = parser.parse_args(
+        args=['--session-ro', 'mysession', 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'mysession'
+
+
+def test_session_ro_invalid_name_rejected():
+    # harness:criterion=c-session-ro-invalid-name-rejected
+    env = MockEnvironment()
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=['--session-ro', 'bad:name', 'GET', 'http://example.com'],
+            env=env
+        )
+
+    assert exc_info.value.code != 0
+    env.stderr.seek(0)
+    assert env.stderr.read()
 
 
 class TestLocalhostShorthand:

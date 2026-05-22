@@ -86,6 +86,20 @@ class BaseHTTPieArgumentParser(argparse.ArgumentParser):
         self.has_stdin_data = False
         self.has_input_data = False
 
+    def _get_option_tuples(self, option_string):
+        option_tuples = super()._get_option_tuples(option_string)
+        if len(option_tuples) <= 1:
+            return option_tuples
+
+        unique_option_tuples = []
+        seen = set()
+        for option_tuple in option_tuples:
+            key = (id(option_tuple[0]), option_tuple[2:])
+            if key not in seen:
+                unique_option_tuples.append(option_tuple)
+                seen.add(key)
+        return unique_option_tuples
+
     # noinspection PyMethodOverriding
     def parse_args(
         self,

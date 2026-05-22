@@ -1,3 +1,4 @@
+from httpie.cli.definition import options as httpie_options
 from httpie.cli.options import ParserSpec, Qualifiers
 
 
@@ -61,3 +62,20 @@ def test_parser_serialization():
             },
         ],
     }
+
+
+def test_session_read_only_schema_options_list_order():
+    # harness:criterion=c-schema-options-list-order
+    schema = httpie_options.serialize()
+    session_read_only_args = [
+        argument
+        for group in schema['groups']
+        for argument in group['args']
+        if '--session-read-only' in argument['options']
+    ]
+
+    assert len(session_read_only_args) == 1
+    assert session_read_only_args[0]['options'] == [
+        '--session-read-only',
+        '--session-ro',
+    ]
