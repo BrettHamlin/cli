@@ -31,6 +31,7 @@ Progressive-review cluster boundary:
 Severity calibration:
 
 - Grade D/F for command changes that break documented or existing default behavior without explicit acceptance-criteria intent.
+- Grade D/F when adding or changing option names/aliases makes an existing accepted CLI spelling, argparse abbreviation, or documented shorthand ambiguous or rejected. CLI option spellings are user-facing compatibility surface.
 - Grade D/F when argument forwarding, exit codes, stdout/stderr routing, or help text make the command unusable in scripts.
 - Grade C for polish or documentation gaps that do not change command semantics.
 
