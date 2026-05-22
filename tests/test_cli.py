@@ -192,6 +192,71 @@ def test_url_colon_slash_slash_only():
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
 
 
+def test_session_ro_alias_sets_session_read_only_dest():
+    # harness:criterion=c-session-ro-parser-sets-dest
+    args = parser.parse_args(
+        args=['--session-ro', 'testname', 'example.org'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'testname'
+    assert args.session is None
+
+
+@pytest.mark.parametrize('option', ['--session-read-only', '--session-ro'])
+def test_session_read_only_aliases_share_argparse_dest(option):
+    # harness:criterion=c-session-ro-dest-name-unchanged
+    args = parser.parse_args(
+        args=[option, 'testname', 'example.org'],
+        env=MockEnvironment()
+    )
+    assert hasattr(args, 'session_read_only')
+    assert not hasattr(args, 'session_ro')
+    assert args.session_read_only == 'testname'
+
+
+def test_session_ro_alias_appears_in_help_output():
+    # harness:criterion=c-session-ro-in-help-output
+    r = http('--help', tolerate_error_exit_status=True)
+    assert r.exit_status == ExitStatus.SUCCESS
+    assert '--session-ro' in r
+
+
+def test_session_ro_alias_is_mutually_exclusive_with_session():
+    # harness:criterion=c-session-ro-mutually-exclusive-with-session
+    r = http(
+        '--session-ro', 'readonly',
+        '--session', 'writable',
+        'example.org',
+        tolerate_error_exit_status=True
+    )
+    output = f'{r.stderr}{r}'
+    assert r.exit_status == ExitStatus.ERROR
+    assert 'not allowed with argument' in output
+    assert 'Traceback' not in output
+
+
+def test_session_ro_alias_rejects_invalid_session_name():
+    # harness:criterion=c-session-ro-validator-rejects-invalid-name
+    r = http(
+        '--session-ro', 'bad:name',
+        'example.org',
+        tolerate_error_exit_status=True
+    )
+    output = f'{r.stderr}{r}'
+    assert r.exit_status == ExitStatus.ERROR
+    assert 'Session name contains invalid characters.' in output
+    assert 'Traceback' not in output
+
+
+def test_session_ro_alias_requires_value():
+    # harness:criterion=c-session-ro-missing-value-errors
+    r = http('--session-ro', tolerate_error_exit_status=True)
+    output = f'{r.stderr}{r}'
+    assert r.exit_status == ExitStatus.ERROR
+    assert 'expected one argument' in output
+    assert 'Traceback' not in output
+
+
 class TestLocalhostShorthand:
     def test_expand_localhost_shorthand(self):
         args = parser.parse_args(args=[':'], env=MockEnvironment())

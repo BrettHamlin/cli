@@ -148,6 +148,22 @@ class TestSessionFlow(SessionTestBase):
         # Should be the same as before r3.
         assert r2.json == r4.json
 
+    def test_session_ro_read_only_does_not_write_session_file(self, httpbin):
+        # harness:criterion=c-session-ro-no-write-on-disk
+        self.start_session(httpbin)
+        session_path = next((self.config_dir / 'sessions').glob('**/test.json'))
+        original_contents = session_path.read_bytes()
+        original_mtime = session_path.stat().st_mtime_ns
+
+        r = http('--follow', '--session-ro=test',
+                 '--auth=username:password2', 'GET',
+                 httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert session_path.read_bytes() == original_contents
+        assert session_path.stat().st_mtime_ns == original_mtime
+
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)
 

@@ -136,3 +136,35 @@ def test_cli_export(load_func, extra_options):
     response = httpie('cli', 'export-args', *extra_options)
     assert response.exit_status == ExitStatus.SUCCESS
     assert load_func(response)['version'] == PARSER_SPEC_VERSION
+
+
+def _exported_parser_spec():
+    response = httpie('cli', 'export-args', '--format=json')
+    assert response.exit_status == ExitStatus.SUCCESS
+    return json.loads(response)['spec']
+
+
+def test_session_ro_alias_is_exported_with_session_read_only_option():
+    # harness:criterion=c-session-ro-in-exported-parser-spec
+    spec = _exported_parser_spec()
+    sessions_group = next(
+        group for group in spec['groups']
+        if group['name'] == 'Sessions'
+    )
+    session_read_only_argument = next(
+        argument for argument in sessions_group['args']
+        if '--session-read-only' in argument['options']
+    )
+    assert '--session-ro' in session_read_only_argument['options']
+
+
+def test_session_ro_alias_is_exported_only_in_sessions_group():
+    # harness:criterion=c-session-ro-sessions-group-placement
+    spec = _exported_parser_spec()
+    groups_with_session_ro = [
+        group['name']
+        for group in spec['groups']
+        for argument in group['args']
+        if '--session-ro' in argument['options']
+    ]
+    assert groups_with_session_ro == ['Sessions']
