@@ -148,6 +148,83 @@ class TestSessionFlow(SessionTestBase):
         # Should be the same as before r3.
         assert r2.json == r4.json
 
+    def test_session_ro_no_write_on_existing(self, httpbin):
+        # harness:criterion=c-session-ro-no-write-on-existing
+        super().start_session(httpbin)
+        session_path = self.config_dir / 'session-ro-existing.json'
+        r1 = http(
+            '--follow',
+            '--session', str(session_path),
+            '--auth=username:password',
+            'GET',
+            httpbin + '/cookies/set?hello=world',
+            'Hello:World',
+            env=self.env()
+        )
+        assert HTTP_OK in r1
+
+        before_mtime = session_path.stat().st_mtime_ns
+        before_contents = session_path.read_bytes()
+
+        r2 = http(
+            '--follow',
+            '--session-ro', str(session_path),
+            '--auth=username:password2',
+            'GET',
+            httpbin + '/cookies/set?hello=world2',
+            'Hello:World2',
+            env=self.env()
+        )
+        assert HTTP_OK in r2
+
+        assert session_path.stat().st_mtime_ns == before_mtime
+        assert session_path.read_bytes() == before_contents
+
+    def test_session_ro_creates_new_session(self, httpbin):
+        # harness:criterion=c-session-ro-creates-new-session
+        super().start_session(httpbin)
+        session_path = self.config_dir / 'session-ro-new.json'
+
+        assert not session_path.exists()
+        r = http(
+            '--session-ro', str(session_path),
+            'GET',
+            httpbin + '/get',
+            env=self.env()
+        )
+
+        assert HTTP_OK in r
+        assert session_path.exists()
+
+    def test_session_ro_applies_stored_headers_auth_cookies(self, httpbin):
+        # harness:criterion=c-session-ro-applies-stored-headers-auth-cookies
+        super().start_session(httpbin)
+        session_path = self.config_dir / 'session-ro-stored-data.json'
+        r1 = http(
+            '--follow',
+            '--session', str(session_path),
+            '--auth=username:password',
+            'GET',
+            httpbin + '/cookies/set?hello=world',
+            'Hello:World',
+            env=self.env()
+        )
+        assert HTTP_OK in r1
+
+        r2 = http(
+            '--session-ro', str(session_path),
+            'GET',
+            httpbin + '/get',
+            env=self.env()
+        )
+
+        assert HTTP_OK in r2
+        assert r2.json['headers']['Hello'] == 'World'
+        assert r2.json['headers']['Authorization'] == (
+            HTTPBasicAuth.make_header('username', 'password')
+        )
+        assert r2.json['headers']['Cookie'] == 'hello=world'
+
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)
 
