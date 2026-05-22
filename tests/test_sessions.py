@@ -88,6 +88,12 @@ class TestSessionFlow(SessionTestBase):
         )
         assert HTTP_OK in r1
 
+    def get_session_file(self):
+        return next((self.config_dir / 'sessions').glob('*/test.json'))
+
+    def snapshot_session_file(self, path):
+        return path.stat().st_mtime_ns, path.read_bytes()
+
     def test_session_created_and_reused(self, httpbin):
         self.start_session(httpbin)
         # Verify that the session created in setup_method() has been used.
@@ -147,6 +153,50 @@ class TestSessionFlow(SessionTestBase):
 
         # Should be the same as before r3.
         assert r2.json == r4.json
+
+    def test_session_ro_read_only_does_not_modify_existing_session(self, httpbin):
+        # harness:criterion=c-session-ro-no-write-existing-session
+        self.start_session(httpbin)
+        session_path = self.get_session_file()
+        before = self.snapshot_session_file(session_path)
+
+        r = http('--follow', '--session-ro', str(session_path),
+                 '--auth=username:password2', 'GET',
+                 httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+                 env=self.env())
+        assert HTTP_OK in r
+
+        assert self.snapshot_session_file(session_path) == before
+
+    def test_session_ro_matches_session_read_only_runtime_behavior(self, httpbin):
+        # harness:criterion=c-session-ro-parity-with-session-read-only
+        self.start_session(httpbin)
+        original_session_path = self.get_session_file()
+        read_only_path = self.config_dir / 'session-read-only.json'
+        session_ro_path = self.config_dir / 'session-ro.json'
+        shutil.copy2(original_session_path, read_only_path)
+        shutil.copy2(original_session_path, session_ro_path)
+        read_only_before = self.snapshot_session_file(read_only_path)
+        session_ro_before = self.snapshot_session_file(session_ro_path)
+
+        read_only_response = http(
+            '--follow', '--session-read-only', str(read_only_path),
+            '--auth=username:password2', 'GET',
+            httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+            env=self.env()
+        )
+        session_ro_response = http(
+            '--follow', '--session-ro', str(session_ro_path),
+            '--auth=username:password2', 'GET',
+            httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+            env=self.env()
+        )
+        assert HTTP_OK in read_only_response
+        assert HTTP_OK in session_ro_response
+
+        assert read_only_response == session_ro_response
+        assert self.snapshot_session_file(read_only_path) == read_only_before
+        assert self.snapshot_session_file(session_ro_path) == session_ro_before
 
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)

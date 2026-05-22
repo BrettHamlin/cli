@@ -2164,7 +2164,7 @@ When creating anonymous sessions, please remember to always include at least one
 
 ### Readonly session
 
-To use the original session file without updating it from the request/response exchange after it has been created, specify the session name via `--session-read-only=SESSION_NAME_OR_PATH` instead.
+To use the original session file without updating it from the request/response exchange after it has been created, specify the session name via `--session-read-only=SESSION_NAME_OR_PATH` (or the short form `--session-ro=SESSION_NAME_OR_PATH`) instead.
 
 ```bash
 # If the session file doesn’t exist, then it is created:

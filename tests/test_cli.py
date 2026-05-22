@@ -192,6 +192,56 @@ def test_url_colon_slash_slash_only():
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
 
 
+def test_session_ro_sets_session_read_only_destination():
+    # harness:criterion=c-session-ro-parser-sets-destination,c-session-ro-argparse-destination-name
+    args = parser.parse_args(
+        args=['--session-ro', 'myname', 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'myname'
+    assert not hasattr(args, 'session_ro')
+
+
+def test_session_read_only_destination_is_unchanged():
+    # harness:criterion=c-session-read-only-parser-destination-unchanged
+    args = parser.parse_args(
+        args=['--session-read-only', 'myname', 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'myname'
+
+
+def test_session_ro_appears_in_help_output():
+    # harness:criterion=c-session-ro-help-registered,c-session-read-only-help-preserved
+    r = http('--help', tolerate_error_exit_status=True)
+    assert '--session-ro' in r
+    assert '--session-read-only' in r
+
+
+def test_session_ro_preserves_session_mutual_exclusion():
+    # harness:criterion=c-session-mutual-exclusion-preserved
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=[
+                '--session', 'foo',
+                '--session-ro', 'bar',
+                'GET', 'http://example.com'
+            ],
+            env=MockEnvironment()
+        )
+    assert exc_info.value.code != 0
+
+
+def test_session_ro_uses_session_name_validator():
+    # harness:criterion=c-session-ro-validator-applied
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=['--session-ro', 'bad:name', 'GET', 'http://example.com'],
+            env=MockEnvironment()
+        )
+    assert exc_info.value.code != 0
+
+
 class TestLocalhostShorthand:
     def test_expand_localhost_shorthand(self):
         args = parser.parse_args(args=[':'], env=MockEnvironment())
