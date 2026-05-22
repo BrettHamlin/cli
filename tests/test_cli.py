@@ -1,5 +1,6 @@
 """CLI argument parsing related tests."""
 import argparse
+from pathlib import Path
 
 import pytest
 from requests.exceptions import InvalidSchema
@@ -17,6 +18,9 @@ from .fixtures import (
     JSON_FILE_PATH_ARG,
 )
 from .utils import HTTP_OK, MockEnvironment, StdinBytesIO, http
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestItemParsing:
@@ -190,6 +194,69 @@ def test_url_leading_colon_slash_slash(program_name, url_arg, parsed_url):
 def test_url_colon_slash_slash_only():
     r = http('://', tolerate_error_exit_status=True)
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
+
+
+def test_session_ro_parses_to_session_read_only_destination():
+    # harness:criterion=c-session-ro-parses-to-session-read-only,c-session-read-only-dest-unchanged,c-session-ro-definition-shares-dest
+    for option in ['--session-ro', '--session-read-only']:
+        args = parser.parse_args(
+            args=[option, 'mysession', 'http://example.com'],
+            env=MockEnvironment()
+        )
+        assert args.session_read_only == 'mysession'
+        assert not hasattr(args, 'session_ro')
+
+
+def test_session_ro_is_mutually_exclusive_with_session():
+    # harness:criterion=c-session-ro-mutually-exclusive-with-session
+    r = http(
+        '--session', 'foo',
+        '--session-ro', 'bar',
+        '--offline',
+        'http://example.com',
+        tolerate_error_exit_status=True,
+    )
+    assert r.exit_status == ExitStatus.ERROR
+    assert 'not allowed with argument' in r.stderr
+    assert '--session' in r.stderr
+
+
+def test_session_ro_validates_session_name():
+    # harness:criterion=c-session-ro-validates-session-name
+    r = http(
+        '--session-ro', 'bad:name',
+        '--offline',
+        'http://example.com',
+        tolerate_error_exit_status=True,
+    )
+    assert r.exit_status == ExitStatus.ERROR
+    assert 'Session name contains invalid characters.' in r.stderr
+
+
+def test_session_ro_appears_in_help():
+    # harness:criterion=c-session-ro-appears-in-help,c-session-read-only-still-in-help
+    r = http('--help', tolerate_error_exit_status=True)
+    assert r.exit_status == ExitStatus.SUCCESS
+    assert '--session-ro' in r
+    assert '--session-read-only' in r
+
+
+def test_session_ro_public_artifacts_are_updated():
+    # harness:criterion=c-session-ro-in-bash-completion,c-session-ro-in-fish-completion,c-session-ro-in-http-man-page,c-session-ro-in-https-man-page,c-session-ro-in-readme-docs
+    artifacts = [
+        ('extras/httpie-completion.bash', '--session-ro'),
+        ('extras/httpie-completion.fish', 'session-ro'),
+        ('extras/man/http.1', '--session-ro'),
+        ('extras/man/https.1', '--session-ro'),
+    ]
+    for relative_path, expected in artifacts:
+        text = (REPO_ROOT / relative_path).read_text(encoding='utf8')
+        assert expected in text, relative_path
+
+    readme = (REPO_ROOT / 'docs/README.md').read_text(encoding='utf8')
+    readonly_session = readme.split('### Readonly session', 1)[1].split('\n### ', 1)[0]
+    assert '--session-ro' in readonly_session
+    assert '--session-read-only' in readonly_session
 
 
 class TestLocalhostShorthand:

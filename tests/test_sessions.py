@@ -122,11 +122,15 @@ class TestSessionFlow(SessionTestBase):
                 != r4.json['headers']['Authorization'])
 
     def test_session_read_only(self, httpbin):
+        # harness:criterion=c-session-read-only-does-not-write-session-file
         self.start_session(httpbin)
         # Get a response from the original session.
         r2 = http('--session=test', 'GET', httpbin + '/get',
                   env=self.env())
         assert HTTP_OK in r2
+        session_path = next(self.config_dir.rglob('test.json'))
+        before_mtime = session_path.stat().st_mtime_ns
+        before_contents = session_path.read_text(encoding=UTF8)
 
         # Make a request modifying the session data but
         # with --session-read-only.
@@ -135,6 +139,8 @@ class TestSessionFlow(SessionTestBase):
                   httpbin + '/cookies/set?hello=world2', 'Hello:World2',
                   env=self.env())
         assert HTTP_OK in r3
+        assert session_path.stat().st_mtime_ns == before_mtime
+        assert session_path.read_text(encoding=UTF8) == before_contents
 
         # Get a response from the updated session.
         r4 = http('--session=test', 'GET', httpbin + '/get',
@@ -147,6 +153,32 @@ class TestSessionFlow(SessionTestBase):
 
         # Should be the same as before r3.
         assert r2.json == r4.json
+
+    def test_session_ro_does_not_modify_session_file(self, httpbin):
+        # harness:criterion=c-session-ro-does-not-write-session-file
+        self.start_session(httpbin)
+        session_path = next(self.config_dir.rglob('test.json'))
+        before_mtime = session_path.stat().st_mtime_ns
+        before_contents = session_path.read_text(encoding=UTF8)
+
+        r = http('--follow', '--session-ro=test',
+                 '--auth=username:password2', 'GET',
+                 httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+                 env=self.env())
+        assert HTTP_OK in r
+
+        assert session_path.stat().st_mtime_ns == before_mtime
+        assert session_path.read_text(encoding=UTF8) == before_contents
+
+    def test_session_ro_loads_existing_session_data(self, httpbin):
+        # harness:criterion=c-session-ro-loads-existing-session-data
+        self.start_session(httpbin)
+
+        r = http('--session-ro=test', 'GET', httpbin + '/get',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert r.json['headers']['Hello'] == 'World'
 
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)

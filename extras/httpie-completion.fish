@@ -71,6 +71,7 @@ complete -c http -s q -l quiet                                          -d 'Do n
 
 complete -c http -l session           -F -d 'Create, or reuse and update a session'
 complete -c http -l session-read-only -F -d 'Create or read a session without updating it'
+complete -c http -l session-ro        -F -d 'Create or read a session without updating it'
 
 
 # Authentication
