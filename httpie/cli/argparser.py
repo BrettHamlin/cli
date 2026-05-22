@@ -86,6 +86,41 @@ class BaseHTTPieArgumentParser(argparse.ArgumentParser):
         self.has_stdin_data = False
         self.has_input_data = False
 
+    def _get_option_tuples(self, option_string):
+        option_tuples = super()._get_option_tuples(option_string)
+        if len(option_tuples) < 2:
+            return option_tuples
+
+        def get_action(option_tuple):
+            return option_tuple[0]
+
+        def get_explicit_arg(option_tuple):
+            if len(option_tuple) == 3:
+                return option_tuple[2]
+            return option_tuple[3]
+
+        session_read_only_aliases = {'--session-read-only', '--session-ro'}
+        if all(
+            session_read_only_aliases.issubset(
+                set(get_action(option_tuple).option_strings)
+            )
+            for option_tuple in option_tuples
+        ):
+            # Keep old --session-r* abbreviations working when they match the
+            # same session-read-only action through the canonical option and alias.
+            actions = {
+                id(get_action(option_tuple))
+                for option_tuple in option_tuples
+            }
+            explicit_args = {
+                get_explicit_arg(option_tuple)
+                for option_tuple in option_tuples
+            }
+            if len(actions) == 1 and len(explicit_args) == 1:
+                return [option_tuples[0]]
+
+        return option_tuples
+
     # noinspection PyMethodOverriding
     def parse_args(
         self,

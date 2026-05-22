@@ -121,20 +121,34 @@ class TestSessionFlow(SessionTestBase):
         assert (r2.json['headers']['Authorization']
                 != r4.json['headers']['Authorization'])
 
-    def test_session_read_only(self, httpbin):
+    # harness:criterion=c-session-ro-no-write-back,c-session-read-only-no-write-back-preserved
+    @pytest.mark.parametrize('read_only_option', [
+        '--session-read-only=test',
+        '--session-ro=test',
+    ], ids=[
+        'session_read_only_no_write',
+        'session_ro_no_write',
+    ])
+    def test_session_read_only(self, httpbin, read_only_option):
         self.start_session(httpbin)
         # Get a response from the original session.
         r2 = http('--session=test', 'GET', httpbin + '/get',
                   env=self.env())
         assert HTTP_OK in r2
 
+        session_path = next((self.config_dir / 'sessions').glob('*/test.json'))
+        original_session_content = session_path.read_bytes()
+        original_session_mtime = session_path.stat().st_mtime_ns
+
         # Make a request modifying the session data but
-        # with --session-read-only.
-        r3 = http('--follow', '--session-read-only=test',
+        # with a read-only session option.
+        r3 = http('--follow', read_only_option,
                   '--auth=username:password2', 'GET',
                   httpbin + '/cookies/set?hello=world2', 'Hello:World2',
                   env=self.env())
         assert HTTP_OK in r3
+        assert session_path.read_bytes() == original_session_content
+        assert session_path.stat().st_mtime_ns == original_session_mtime
 
         # Get a response from the updated session.
         r4 = http('--session=test', 'GET', httpbin + '/get',
@@ -147,6 +161,18 @@ class TestSessionFlow(SessionTestBase):
 
         # Should be the same as before r3.
         assert r2.json == r4.json
+
+    # harness:criterion=c-session-ro-loads-session-data
+    def test_session_ro_loads_data_from_existing_session(self, httpbin):
+        self.start_session(httpbin)
+
+        r = http('--session-ro=test', 'GET', httpbin + '/get',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert r.json['headers']['Hello'] == 'World'
+        assert r.json['headers']['Cookie'] == 'hello=world'
+        assert 'Basic ' in r.json['headers']['Authorization']
 
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)
@@ -169,6 +195,19 @@ class TestSessionFlow(SessionTestBase):
 
 class TestSession(SessionTestBase):
     """Stand-alone session tests."""
+
+    # harness:criterion=c-session-ro-first-use-creates-file
+    def test_session_ro_first_use_creates_file(self, httpbin):
+        self.start_session(httpbin)
+        session_name = 'new-read-only-session'
+
+        r = http('--session-ro', session_name, 'GET', httpbin + '/get',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert next(
+            (self.config_dir / 'sessions').glob(f'*/{session_name}.json')
+        ).is_file()
 
     def test_session_ignored_header_prefixes(self, httpbin):
         self.start_session(httpbin)

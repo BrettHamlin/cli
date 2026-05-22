@@ -58,10 +58,12 @@ def unpack_argument(
 
     style = None
     if argument.aliases:
-        if len(argument.aliases) >= 2:
-            opt2, opt1 = argument.aliases
+        aliases = sorted(argument.aliases, key=len)
+        if len(aliases) >= 2:
+            opt1 = aliases[0]
+            opt2 = '/'.join(aliases[1:])
         else:
-            (opt1,) = argument.aliases
+            (opt1,) = aliases
     else:
         opt1 = argument.metavar
         style = STYLE_USAGE_REGULAR

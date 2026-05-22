@@ -6,9 +6,11 @@ from requests.exceptions import InvalidSchema
 
 import httpie.cli.argparser
 from httpie.cli import constants
-from httpie.cli.definition import parser
+from httpie.cli.definition import options, parser
+from httpie.cli.options import ParserSpec
 from httpie.cli.argtypes import KeyValueArg, KeyValueArgType
 from httpie.cli.requestitems import RequestItems
+from httpie.output.ui import rich_help
 from httpie.status import ExitStatus
 from httpie.utils import load_json_preserve_order_and_dupe_keys
 
@@ -17,6 +19,140 @@ from .fixtures import (
     JSON_FILE_PATH_ARG,
 )
 from .utils import HTTP_OK, MockEnvironment, StdinBytesIO, http
+
+
+def _session_read_only_action():
+    actions = [
+        action
+        for action in parser._actions
+        if '--session-read-only' in getattr(action, 'option_strings', [])
+    ]
+    assert len(actions) == 1
+    return actions[0]
+
+
+def _session_read_only_argument():
+    for group in options.groups:
+        for argument in group.arguments:
+            if '--session-read-only' in argument.aliases:
+                return argument
+    raise AssertionError('session-read-only argument not found')
+
+
+def _parse_ok(args):
+    env = MockEnvironment()
+    try:
+        return parser.parse_args(args=args, env=env)
+    finally:
+        env.cleanup()
+
+
+def _parse_error(args):
+    env = MockEnvironment()
+    try:
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(args=[*args, 'GET', 'http://example.com'], env=env)
+        env.stderr.seek(0)
+        return exc_info.value.code, env.stderr.read()
+    finally:
+        env.cleanup()
+
+
+# harness:criterion=c-session-ro-registered-as-alias
+def test_session_ro_is_same_argparse_action_as_session_read_only():
+    action = _session_read_only_action()
+    assert '--session-ro' in action.option_strings
+
+    args = _parse_ok(['--session-ro', 'mysession', 'GET', 'http://example.com'])
+    assert args.session_read_only == 'mysession'
+
+
+# harness:criterion=c-session-ro-sets-dest
+def test_session_ro_sets_session_read_only_dest():
+    args = _parse_ok(['--session-ro=mysession', 'GET', 'http://example.com'])
+    assert args.session_read_only == 'mysession'
+
+
+# harness:criterion=c-session-read-only-dest-preserved
+def test_session_read_only_still_sets_session_read_only_dest():
+    args = _parse_ok([
+        '--session-read-only=mysession',
+        'GET',
+        'http://example.com',
+    ])
+    assert args.session_read_only == 'mysession'
+
+
+# harness:criterion=c-session-ro-uses-session-name-validator
+def test_session_ro_validator_matches_session_read_only():
+    canonical_error = _parse_error(['--session-read-only=bad$name'])
+    alias_error = _parse_error(['--session-ro=bad$name'])
+
+    assert canonical_error[0] != 0
+    assert alias_error[0] == canonical_error[0]
+    assert 'Session name contains invalid characters.' in canonical_error[1]
+    assert 'Session name contains invalid characters.' in alias_error[1]
+
+
+# harness:criterion=c-session-ro-appears-in-help
+def test_session_ro_appears_in_rich_help_for_session_read_only_argument():
+    option_text = ' '.join(
+        text.plain for text in rich_help.unpack_argument(_session_read_only_argument())
+    )
+    assert '--session-read-only' in option_text
+    assert '--session-ro' in option_text
+
+
+# harness:criterion=c-rich-help-unpack-handles-three-aliases
+def test_rich_help_unpack_three_aliases_keeps_all_aliases():
+    three_alias_parser = ParserSpec('test')
+    group = three_alias_parser.add_group('Options')
+    argument = group.add_argument(
+        '--session-read-only',
+        '--session-ro',
+        '--session-readable',
+        help='Read a session without updating it.',
+    )
+
+    option_text = ' '.join(
+        text.plain for text in rich_help.unpack_argument(argument)
+    )
+
+    assert '--session-read-only' in option_text
+    assert '--session-ro' in option_text
+    assert '--session-readable' in option_text
+
+
+# harness:criterion=c-session-read-only-help-text-unchanged
+def test_session_read_only_help_text_is_unchanged():
+    assert _session_read_only_action().help == """
+    Create or read a session without updating it form the request/response
+    exchange.
+
+    """
+
+
+# harness:criterion=c-session-ro-conflict-with-session
+def test_session_ro_conflicts_with_session_like_session_read_only():
+    canonical_error = _parse_error([
+        '--session-read-only',
+        'mysession',
+        '--session',
+        'mysession',
+    ])
+    alias_error = _parse_error([
+        '--session-ro',
+        'mysession',
+        '--session',
+        'mysession',
+    ])
+
+    assert canonical_error[0] != 0
+    assert alias_error[0] == canonical_error[0]
+    assert '--session' in canonical_error[1]
+    assert '--session' in alias_error[1]
+    assert 'not allowed with argument' in canonical_error[1]
+    assert 'not allowed with argument' in alias_error[1]
 
 
 class TestItemParsing:
