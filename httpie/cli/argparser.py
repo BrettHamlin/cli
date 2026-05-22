@@ -124,6 +124,19 @@ class BaseHTTPieArgumentParser(argparse.ArgumentParser):
             message = message.encode(env.stdout_encoding)
         super()._print_message(message, file)
 
+    def _get_option_tuples(self, option_string):
+        option_tuples = super()._get_option_tuples(option_string)
+        unique_option_tuples = []
+        seen_actions = set()
+        for option_tuple in option_tuples:
+            action = option_tuple[0]
+            # Multiple aliases for the same action are one semantic match.
+            if action in seen_actions:
+                continue
+            seen_actions.add(action)
+            unique_option_tuples.append(option_tuple)
+        return unique_option_tuples
+
 
 class HTTPieManagerArgumentParser(BaseHTTPieArgumentParser):
     def parse_known_args(self, args=None, namespace=None):

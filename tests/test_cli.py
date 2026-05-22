@@ -9,6 +9,7 @@ from httpie.cli import constants
 from httpie.cli.definition import parser
 from httpie.cli.argtypes import KeyValueArg, KeyValueArgType
 from httpie.cli.requestitems import RequestItems
+from httpie.output.ui.rich_help import unpack_argument
 from httpie.status import ExitStatus
 from httpie.utils import load_json_preserve_order_and_dupe_keys
 
@@ -190,6 +191,66 @@ def test_url_leading_colon_slash_slash(program_name, url_arg, parsed_url):
 def test_url_colon_slash_slash_only():
     r = http('://', tolerate_error_exit_status=True)
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
+
+
+def test_session_ro_sets_session_read_only_destination():
+    # harness:criterion=c-session-ro-parser-dest
+    args = parser.parse_args(
+        args=['--session-ro', 'NAME', 'example.org'],
+        env=MockEnvironment(),
+    )
+    assert args.session_read_only == 'NAME'
+
+
+def test_session_ro_help_contains_alias_and_canonical_option():
+    # harness:criterion=c-session-read-only-help-preserved,c-session-ro-visible-in-help
+    r = http('--help', tolerate_error_exit_status=True)
+
+    assert r.exit_status == ExitStatus.SUCCESS
+    assert '--session-read-only' in r
+    assert '--session-ro' in r
+
+
+def test_session_ro_is_mutually_exclusive_with_session():
+    # harness:criterion=c-session-ro-mutex-with-session
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=[
+                '--session-ro', 'NAME',
+                '--session', 'OTHER',
+                'example.org',
+            ],
+            env=MockEnvironment(),
+        )
+
+    assert exc_info.value.code != 0
+
+
+def test_session_ro_applies_session_name_validator():
+    # harness:criterion=c-session-ro-name-validator-applied
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=['--session-ro', 'bad:name', 'example.org'],
+            env=MockEnvironment(),
+        )
+
+    assert exc_info.value.code != 0
+
+
+def test_session_ro_is_visible_in_rich_help():
+    # harness:criterion=c-session-ro-rich-help-visible
+    session_read_only_argument = next(
+        argument
+        for group in parser.spec.groups
+        for argument in group.arguments
+        if '--session-read-only' in argument.aliases
+    )
+
+    rich_help_parts = unpack_argument(session_read_only_argument)
+    rich_help_text = ' '.join(str(part) for part in rich_help_parts)
+
+    assert '--session-read-only' in rich_help_text
+    assert '--session-ro' in rich_help_text
 
 
 class TestLocalhostShorthand:

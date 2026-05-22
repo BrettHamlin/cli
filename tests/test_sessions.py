@@ -148,6 +148,35 @@ class TestSessionFlow(SessionTestBase):
         # Should be the same as before r3.
         assert r2.json == r4.json
 
+    def test_session_ro_does_not_rewrite_existing_session_file(self, httpbin):
+        # harness:criterion=c-session-ro-no-rewrite-existing
+        super().start_session(httpbin)
+        session_path = self.config_dir / 'readonly-session.json'
+        session_content = json.dumps({
+            'headers': [
+                {'name': 'Hello', 'value': 'World'},
+            ],
+            'cookies': [],
+            'auth': {
+                'type': None,
+                'username': None,
+                'password': None,
+            },
+        }, indent=4, sort_keys=True)
+        session_path.write_text(session_content, encoding=UTF8)
+        os.utime(session_path, (946684800, 946684800))
+        mtime_before = session_path.stat().st_mtime_ns
+        content_before = session_path.read_text(encoding=UTF8)
+
+        r = http('--follow', '--session-ro', str(session_path),
+                 '--auth=username:password2', 'GET',
+                 httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert session_path.stat().st_mtime_ns == mtime_before
+        assert session_path.read_text(encoding=UTF8) == content_before
+
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)
 
