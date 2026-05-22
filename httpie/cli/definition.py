@@ -8,6 +8,7 @@ from httpie import __doc__, __version__
 from httpie.cli.argtypes import (KeyValueArgType, SessionNameValidator,
                                  SSLCredentials, readable_file_arg,
                                  response_charset_type, response_mime_type)
+from httpie.cli.argparser import DistinctOptionConflictAction
 from httpie.cli.constants import (BASE_OUTPUT_OPTIONS, DEFAULT_FORMAT_OPTIONS,
                                   OUT_REQ_BODY, OUT_REQ_HEAD, OUT_RESP_BODY,
                                   OUT_RESP_HEAD, OUT_RESP_META, OUTPUT_OPTIONS,
@@ -607,6 +608,8 @@ sessions.add_argument(
 )
 sessions.add_argument(
     '--session-read-only',
+    '--session-ro',
+    action=DistinctOptionConflictAction,
     metavar='SESSION_NAME_OR_PATH',
     type=session_name_validator,
     short_help='Create or read a session without updating it',

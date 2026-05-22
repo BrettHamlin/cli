@@ -1,5 +1,6 @@
 """CLI argument parsing related tests."""
 import argparse
+from pathlib import Path
 
 import pytest
 from requests.exceptions import InvalidSchema
@@ -190,6 +191,88 @@ def test_url_leading_colon_slash_slash(program_name, url_arg, parsed_url):
 def test_url_colon_slash_slash_only():
     r = http('://', tolerate_error_exit_status=True)
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
+
+
+def test_session_ro_maps_to_dest():
+    # harness:criterion=c-session-ro-maps-to-dest,c-session-ro-dest-attribute-name
+    args = parser.parse_args(
+        args=['--session-ro', 'MYNAME', 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+
+    assert args.session_read_only == 'MYNAME'
+
+
+def test_session_read_only_long_form_still_maps_to_session_read_only_dest():
+    # harness:criterion=c-session-read-only-long-form-unchanged
+    args = parser.parse_args(
+        args=['--session-read-only', 'MYNAME', 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+
+    assert args.session_read_only == 'MYNAME'
+
+
+def test_session_ro_incompatible_with_session():
+    # harness:criterion=c-session-ro-incompatible-with-session
+    env = MockEnvironment()
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=[
+                '--session', 'mysession',
+                '--session-ro', 'myro',
+                'GET', 'http://example.com',
+            ],
+            env=env
+        )
+
+    env.stderr.seek(0)
+    stderr = env.stderr.read()
+    assert exc_info.value.code != 0
+    assert (
+        'argument --session-ro: not allowed with argument --session'
+        in stderr
+    )
+
+
+def test_session_ro_incompatible_with_session_read_only():
+    # harness:criterion=c-session-ro-incompatible-with-session-read-only
+    env = MockEnvironment()
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=[
+                '--session-read-only', 'myname',
+                '--session-ro', 'myro',
+                'GET', 'http://example.com',
+            ],
+            env=env
+        )
+
+    env.stderr.seek(0)
+    stderr = env.stderr.read()
+    assert exc_info.value.code != 0
+    assert (
+        'argument --session-ro: not allowed with argument --session-read-only'
+        in stderr
+    )
+
+
+def test_session_ro_is_listed_in_bash_completion():
+    # harness:criterion=c-session-ro-bash-completion
+    completion = Path('extras/httpie-completion.bash').read_text()
+
+    assert '--session-read-only' in completion
+    assert '--session-ro' in completion
+
+
+def test_session_ro_is_listed_in_fish_completion():
+    # harness:criterion=c-session-ro-fish-completion
+    completion = Path('extras/httpie-completion.fish').read_text()
+
+    assert '--session-read-only' in completion
+    assert '--session-ro' in completion
 
 
 class TestLocalhostShorthand:

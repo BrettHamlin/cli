@@ -1,3 +1,4 @@
+from httpie.cli.definition import options
 from httpie.cli.options import ParserSpec, Qualifiers
 
 
@@ -61,3 +62,18 @@ def test_parser_serialization():
             },
         ],
     }
+
+
+def test_session_ro_same_argument_entry():
+    # harness:criterion=c-session-ro-same-argument-entry
+    serialized = options.serialize()
+
+    session_read_only_args = [
+        argument
+        for group in serialized['groups']
+        for argument in group['args']
+        if '--session-read-only' in argument['options']
+    ]
+
+    assert len(session_read_only_args) == 1
+    assert '--session-ro' in session_read_only_args[0]['options']

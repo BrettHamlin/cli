@@ -29,6 +29,19 @@ from ..plugins.registry import plugin_manager
 from ..utils import ExplicitNullAuth, get_content_type
 
 
+class DistinctOptionConflictAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        marker = f'_{self.dest}_option_string'
+        previous_option_string = getattr(namespace, marker, None)
+        if previous_option_string and previous_option_string != option_string:
+            parser.error(
+                f'argument {option_string}: not allowed with argument '
+                f'{previous_option_string}'
+            )
+        setattr(namespace, self.dest, values)
+        setattr(namespace, marker, option_string)
+
+
 class HTTPieHelpFormatter(RawDescriptionHelpFormatter):
     """A nicer help formatter.
 
@@ -79,12 +92,49 @@ class HTTPieHelpFormatter(RawDescriptionHelpFormatter):
 # TODO: refactor and design type-annotated data structures
 #       for raw args + parsed args and keep things immutable.
 class BaseHTTPieArgumentParser(argparse.ArgumentParser):
+    _compatible_same_action_option_aliases = {
+        'session_read_only': {'--session-read-only', '--session-ro'},
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env = None
         self.args = None
         self.has_stdin_data = False
         self.has_input_data = False
+
+    def _get_option_tuples(self, option_string):
+        option_tuples = super()._get_option_tuples(option_string)
+        if len(option_tuples) <= 1:
+            return option_tuples
+
+        # argparse treats long aliases on the same action as ambiguous for
+        # abbreviations; keep pre-existing --session-r prefixes working.
+        if not option_tuples[0]:
+            return option_tuples
+        action = option_tuples[0][0]
+        if not all(
+            option_tuple and option_tuple[0] is action
+            for option_tuple in option_tuples
+        ):
+            return option_tuples
+        compatible_aliases = self._compatible_same_action_option_aliases.get(
+            action.dest
+        )
+        if not compatible_aliases:
+            return option_tuples
+        if not all(len(option_tuple) > 1 for option_tuple in option_tuples):
+            return option_tuples
+        matched_options = {
+            option_tuple[1]
+            for option_tuple in option_tuples
+        }
+        if not matched_options <= compatible_aliases:
+            return option_tuples
+        for option_tuple in option_tuples:
+            if len(option_tuple) > 1 and option_tuple[1] == '--session-read-only':
+                return [option_tuple]
+        return [option_tuples[0]]
 
     # noinspection PyMethodOverriding
     def parse_args(
@@ -103,7 +153,13 @@ class BaseHTTPieArgumentParser(argparse.ArgumentParser):
             and not self.env.stdin_isatty
         )
         self.has_input_data = self.has_stdin_data or getattr(self.args, 'raw', None) is not None
+        self._remove_internal_option_markers()
         return self.args
+
+    def _remove_internal_option_markers(self):
+        for name in vars(self.args).copy():
+            if name.startswith('_') and name.endswith('_option_string'):
+                delattr(self.args, name)
 
     # noinspection PyShadowingBuiltins
     def _print_message(self, message, file=None):
@@ -191,6 +247,7 @@ class HTTPieArgumentParser(BaseHTTPieArgumentParser):
             if self.args.multipart:
                 self.error('cannot combine --compress and --multipart')
 
+        self._remove_internal_option_markers()
         return self.args
 
     def _process_request_type(self):
