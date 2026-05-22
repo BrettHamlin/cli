@@ -5,6 +5,7 @@ version: "1"
 github:
   owner: BrettHamlin
   repo: cli
+  base_branch: "master"
 
 reviewer_dispatch:
   strategy: progressive
