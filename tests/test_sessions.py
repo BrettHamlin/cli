@@ -121,20 +121,30 @@ class TestSessionFlow(SessionTestBase):
         assert (r2.json['headers']['Authorization']
                 != r4.json['headers']['Authorization'])
 
-    def test_session_read_only(self, httpbin):
+    @pytest.mark.parametrize(
+        'read_only_option',
+        ['--session-read-only', '--session-ro']
+    )
+    def test_session_read_only(self, read_only_option, httpbin):
+        # harness:criterion=c-session-ro-no-write-after-request,c-session-read-only-no-write-preserved
         self.start_session(httpbin)
         # Get a response from the original session.
         r2 = http('--session=test', 'GET', httpbin + '/get',
                   env=self.env())
         assert HTTP_OK in r2
+        session_path, = self.config_dir.rglob('test.json')
+        original_session_file = session_path.read_text(encoding=UTF8)
+        original_mtime = session_path.stat().st_mtime_ns
 
         # Make a request modifying the session data but
-        # with --session-read-only.
-        r3 = http('--follow', '--session-read-only=test',
+        # with a read-only session.
+        r3 = http('--follow', f'{read_only_option}=test',
                   '--auth=username:password2', 'GET',
                   httpbin + '/cookies/set?hello=world2', 'Hello:World2',
                   env=self.env())
         assert HTTP_OK in r3
+        assert session_path.read_text(encoding=UTF8) == original_session_file
+        assert session_path.stat().st_mtime_ns == original_mtime
 
         # Get a response from the updated session.
         r4 = http('--session=test', 'GET', httpbin + '/get',

@@ -192,6 +192,113 @@ def test_url_colon_slash_slash_only():
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
 
 
+def find_session_read_only_argument():
+    for group in parser.spec.groups:
+        if group.name != 'Sessions':
+            continue
+        for argument in group.arguments:
+            if '--session-read-only' in argument.aliases:
+                return argument
+    raise AssertionError('No --session-read-only argument found')
+
+
+def find_action(option_string):
+    for action in parser._actions:
+        if option_string in action.option_strings:
+            return action
+    raise AssertionError(f'No action found for {option_string}')
+
+
+def test_session_ro_sets_session_read_only_dest():
+    # harness:criterion=c-session-ro-sets-dest
+    args = parser.parse_args(
+        args=['--session-ro', 'mysession', 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'mysession'
+    assert args.session is None
+
+
+def test_session_read_only_still_sets_session_read_only_dest():
+    # harness:criterion=c-session-read-only-dest-unchanged
+    args = parser.parse_args(
+        args=['--session-read-only', 'mysession', 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'mysession'
+    assert args.session is None
+
+
+def test_session_read_only_argument_spec_includes_aliases():
+    # harness:criterion=c-session-ro-in-argument-spec
+    options = find_session_read_only_argument().serialize()['options']
+    assert '--session-ro' in options
+    assert '--session-read-only' in options
+
+
+def test_session_ro_mutually_exclusive_with_session():
+    # harness:criterion=c-session-ro-mutually-exclusive-with-session
+    r = http(
+        '--session-ro', 'foo',
+        '--session', 'bar',
+        'GET', 'http://example.com',
+        tolerate_error_exit_status=True
+    )
+    assert r.exit_status == ExitStatus.ERROR
+    assert 'not allowed with argument' in r.stderr
+
+
+def test_session_ro_validator_matches_session_read_only():
+    # harness:criterion=c-session-ro-validator-applied
+    invalid_name = 'invalid:name'
+    ro = http(
+        '--session-ro', invalid_name,
+        'GET', 'http://example.com',
+        tolerate_error_exit_status=True
+    )
+    canonical = http(
+        '--session-read-only', invalid_name,
+        'GET', 'http://example.com',
+        tolerate_error_exit_status=True
+    )
+    assert ro.exit_status == ExitStatus.ERROR
+    assert canonical.exit_status == ExitStatus.ERROR
+    assert 'Session name contains invalid characters.' in ro.stderr
+    assert 'Session name contains invalid characters.' in canonical.stderr
+
+
+def test_session_ro_help_renders():
+    # harness:criterion=c-session-ro-help-renders
+    r = http('--help', tolerate_error_exit_status=True)
+    assert r.exit_status == ExitStatus.SUCCESS
+    assert '--session-ro' in r
+    assert '--session-read-only' in r
+    assert r.stderr == ''
+
+
+def test_session_read_only_help_text_preserved():
+    # harness:criterion=c-session-read-only-help-text-preserved
+    r = http('--help', tolerate_error_exit_status=True)
+    session_help = str(r).split('--session-read-only', 1)[1]
+    session_help = session_help.split('Authentication:', 1)[0]
+    normalized_session_help = ' '.join(session_help.split())
+    assert 'Create or read a session without updating it' in normalized_session_help
+    assert (
+        'Create or read a session without updating it form the '
+        'request/response exchange.'
+    ) in normalized_session_help
+    assert 'default' not in normalized_session_help.lower()
+
+
+def test_session_ro_and_session_read_only_share_parser_action():
+    # harness:criterion=c-session-ro-same-dest-as-canonical
+    ro_action = find_action('--session-ro')
+    canonical_action = find_action('--session-read-only')
+    assert ro_action.dest == 'session_read_only'
+    assert canonical_action.dest == 'session_read_only'
+    assert ro_action is canonical_action
+
+
 class TestLocalhostShorthand:
     def test_expand_localhost_shorthand(self):
         args = parser.parse_args(args=[':'], env=MockEnvironment())
