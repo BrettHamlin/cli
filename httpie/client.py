@@ -133,11 +133,10 @@ def collect_messages(
             yield response
         break
 
-    if httpie_session:
-        if httpie_session.is_new() or not args.session_read_only:
-            httpie_session.cookies = requests_session.cookies
-            httpie_session.remove_cookies(expired_cookies)
-            httpie_session.save()
+    if httpie_session and (httpie_session.is_new() or not args.session_read_only):
+        httpie_session.cookies = requests_session.cookies
+        httpie_session.remove_cookies(expired_cookies)
+        httpie_session.save()
 
 
 # noinspection PyProtectedMember

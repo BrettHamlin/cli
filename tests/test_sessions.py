@@ -29,13 +29,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SESSION_FILE_TIME = 946684800
 
 
-def get_session_read_only_options():
+def get_session_read_only_argument():
     for group in options.serialize()['groups']:
         for argument in group['args']:
             aliases = argument['options']
             if '--session-read-only' in aliases:
-                return aliases
+                return argument
     raise AssertionError('Could not find --session-read-only in parser spec')
+
+
+def get_session_read_only_options():
+    return get_session_read_only_argument()['options']
 
 
 def write_session_file(session_path: Path, *, headers=None):
@@ -81,7 +85,10 @@ def parse_session_args(args):
 
 def test_session_ro_is_serialized_as_session_read_only_alias():
     # harness:criterion=c-session-ro-alias-in-parser
-    assert '--session-ro' in get_session_read_only_options()
+    aliases = get_session_read_only_options()
+    assert '--session-read-only' in aliases
+    assert '--session-ro' in aliases
+    assert aliases.index('--session-read-only') < aliases.index('--session-ro')
 
 
 def test_session_ro_parses_to_session_read_only_dest():
