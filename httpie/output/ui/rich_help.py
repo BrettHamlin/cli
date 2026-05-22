@@ -58,15 +58,19 @@ def unpack_argument(
 
     style = None
     if argument.aliases:
-        if len(argument.aliases) >= 2:
-            opt2, opt1 = argument.aliases
-        else:
-            (opt1,) = argument.aliases
+        opt1 = '/'.join(order_aliases_for_display(argument.aliases))
     else:
         opt1 = argument.metavar
         style = STYLE_USAGE_REGULAR
 
     return Text(opt1, style=style), Text(opt2)
+
+
+def order_aliases_for_display(aliases: Iterable[str]) -> Iterable[str]:
+    return sorted(
+        aliases,
+        key=lambda alias: (alias.startswith('--'),)
+    )
 
 
 def to_usage(
@@ -92,7 +96,7 @@ def to_usage(
 
         is_whitelisted = whitelist.intersection(argument.aliases)
         if argument.aliases:
-            name = '/'.join(sorted(argument.aliases, key=len))
+            name = '/'.join(order_aliases_for_display(argument.aliases))
         else:
             name = argument.metavar
 

@@ -1,6 +1,8 @@
 import json
 import os
 import shutil
+import subprocess
+import sys
 from contextlib import contextmanager
 from datetime import datetime
 from unittest import mock
@@ -10,6 +12,7 @@ from typing import Iterator
 import pytest
 
 from .fixtures import FILE_PATH_ARG, UNICODE
+from httpie.cli.definition import options, parser
 from httpie.context import Environment
 from httpie.encoding import UTF8
 from httpie.plugins import AuthPlugin
@@ -20,6 +23,153 @@ from httpie.utils import get_expired_cookies
 from .test_auth_plugins import basic_auth
 from .utils import DUMMY_HOST, HTTP_OK, MockEnvironment, http, mk_config_dir
 from base64 import b64encode
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SESSION_FILE_TIME = 946684800
+
+
+def get_session_read_only_options():
+    for group in options.serialize()['groups']:
+        for argument in group['args']:
+            aliases = argument['options']
+            if '--session-read-only' in aliases:
+                return aliases
+    raise AssertionError('Could not find --session-read-only in parser spec')
+
+
+def write_session_file(session_path: Path, *, headers=None):
+    session_data = {
+        'headers': headers or [],
+        'cookies': [],
+        'auth': {
+            'type': None,
+            'username': None,
+            'password': None,
+        },
+    }
+    session_path.write_text(json.dumps(session_data, sort_keys=True), encoding=UTF8)
+    os.utime(session_path, (SESSION_FILE_TIME, SESSION_FILE_TIME))
+    return session_path.read_text(encoding=UTF8), os.path.getmtime(session_path)
+
+
+def run_httpie_help(tmp_path):
+    env = os.environ.copy()
+    env['HTTPIE_CONFIG_DIR'] = str(tmp_path / 'httpie-config')
+    env['PYTHONPATH'] = os.pathsep.join([
+        str(REPO_ROOT),
+        env.get('PYTHONPATH', ''),
+    ])
+    return subprocess.run(
+        [sys.executable, '-m', 'httpie', '--help'],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+
+def parse_session_args(args):
+    try:
+        parsed = parser.parse_args(args=args, env=MockEnvironment())
+    except SystemExit as exc:
+        return exc.code, None, None
+    return 0, parsed.session_read_only, parsed.session
+
+
+def test_session_ro_is_serialized_as_session_read_only_alias():
+    # harness:criterion=c-session-ro-alias-in-parser
+    assert '--session-ro' in get_session_read_only_options()
+
+
+def test_session_ro_parses_to_session_read_only_dest():
+    # harness:criterion=c-session-ro-dest-is-session-read-only
+    args = parser.parse_args(
+        args=['--session-ro', 'mysession', 'GET', 'http://localhost'],
+        env=MockEnvironment(),
+    )
+    assert args.session_read_only == 'mysession'
+
+
+def test_session_read_only_still_parses_to_session_read_only_dest():
+    # harness:criterion=c-session-read-only-dest-unchanged
+    args = parser.parse_args(
+        args=['--session-read-only', 'mysession', 'GET', 'http://localhost'],
+        env=MockEnvironment(),
+    )
+    assert args.session_read_only == 'mysession'
+
+
+def test_session_ro_loads_existing_session_without_writing(httpbin, tmp_path):
+    # harness:criterion=c-session-ro-no-write-on-existing-file,c-session-ro-loads-session-data
+    session_path = tmp_path / 'session.json'
+    original_content, original_mtime = write_session_file(
+        session_path,
+        headers=[{'name': 'X-Test-Token', 'value': 'abc123'}],
+    )
+
+    r = http('--session-ro', str(session_path), 'GET', httpbin + '/get')
+
+    assert HTTP_OK in r
+    assert r.json['headers']['X-Test-Token'] == 'abc123'
+    assert os.path.getmtime(session_path) == original_mtime
+    assert session_path.read_text(encoding=UTF8) == original_content
+
+
+def test_session_read_only_still_loads_existing_session_without_writing(httpbin, tmp_path):
+    # harness:criterion=c-session-read-only-no-write-preserved
+    session_path = tmp_path / 'session.json'
+    original_content, original_mtime = write_session_file(
+        session_path,
+        headers=[{'name': 'X-Test-Token', 'value': 'abc123'}],
+    )
+
+    r = http('--session-read-only', str(session_path), 'GET', httpbin + '/get')
+
+    assert HTTP_OK in r
+    assert r.json['headers']['X-Test-Token'] == 'abc123'
+    assert os.path.getmtime(session_path) == original_mtime
+    assert session_path.read_text(encoding=UTF8) == original_content
+
+
+def test_session_ro_does_not_create_missing_session_file(httpbin, tmp_path):
+    # harness:criterion=c-session-ro-new-session-not-written
+    session_path = tmp_path / 'new-session.json'
+
+    r = http('--session-ro', str(session_path), 'GET', httpbin + '/get')
+
+    assert HTTP_OK in r
+    assert not os.path.exists(session_path)
+
+
+def test_session_ro_help_output(tmp_path):
+    # harness:criterion=c-session-ro-appears-in-help-output,c-session-read-only-still-in-help-output,c-rich-help-three-alias-no-crash
+    process = run_httpie_help(tmp_path)
+
+    assert process.returncode == 0
+    assert '--session-ro' in process.stdout
+    assert '--session-read-only' in process.stdout
+    assert process.stdout.index('--session-read-only') < process.stdout.index('--session-ro')
+    assert 'Traceback' not in process.stderr
+    assert 'Error' not in process.stderr
+
+
+def test_session_ro_and_session_match_session_read_only_and_session_parse_behavior():
+    # harness:criterion=c-session-ro-mutual-exclusive-with-session
+    alias_result = parse_session_args([
+        '--session-ro', 'ro_sess',
+        '--session', 'rw_sess',
+        'GET', 'http://localhost',
+    ])
+    canonical_result = parse_session_args([
+        '--session-read-only', 'ro_sess',
+        '--session', 'rw_sess',
+        'GET', 'http://localhost',
+    ])
+
+    assert alias_result == canonical_result
 
 
 class SessionTestBase:
