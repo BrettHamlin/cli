@@ -29,6 +29,19 @@ from ..plugins.registry import plugin_manager
 from ..utils import ExplicitNullAuth, get_content_type
 
 
+class DistinctOptionConflictAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        marker = f'_{self.dest}_option_string'
+        previous_option_string = getattr(namespace, marker, None)
+        if previous_option_string and previous_option_string != option_string:
+            parser.error(
+                f'argument {option_string}: not allowed with argument '
+                f'{previous_option_string}'
+            )
+        setattr(namespace, self.dest, values)
+        setattr(namespace, marker, option_string)
+
+
 class HTTPieHelpFormatter(RawDescriptionHelpFormatter):
     """A nicer help formatter.
 
@@ -79,12 +92,116 @@ class HTTPieHelpFormatter(RawDescriptionHelpFormatter):
 # TODO: refactor and design type-annotated data structures
 #       for raw args + parsed args and keep things immutable.
 class BaseHTTPieArgumentParser(argparse.ArgumentParser):
+    _compatible_same_action_option_aliases = {
+        'session_read_only': {'--session-read-only', '--session-ro'},
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env = None
         self.args = None
+        self._raw_arg_strings = None
         self.has_stdin_data = False
         self.has_input_data = False
+
+    def parse_known_args(self, args=None, namespace=None):
+        self._raw_arg_strings = (
+            sys.argv[1:]
+            if args is None
+            else list(args)
+        )
+        return super().parse_known_args(args, namespace)
+
+    def error(self, message):
+        message = self._rewrite_compatible_alias_conflict_message(message)
+        super().error(message)
+
+    def _get_option_tuples(self, option_string):
+        option_tuples = super()._get_option_tuples(option_string)
+        if len(option_tuples) <= 1:
+            return option_tuples
+
+        # argparse treats long aliases on the same action as ambiguous for
+        # abbreviations; keep pre-existing --session-r prefixes working.
+        if not option_tuples[0]:
+            return option_tuples
+        action = option_tuples[0][0]
+        if not all(
+            option_tuple and option_tuple[0] is action
+            for option_tuple in option_tuples
+        ):
+            return option_tuples
+        compatible_aliases = self._compatible_same_action_option_aliases.get(
+            action.dest
+        )
+        if not compatible_aliases:
+            return option_tuples
+        if not all(len(option_tuple) > 1 for option_tuple in option_tuples):
+            return option_tuples
+        matched_options = {
+            option_tuple[1]
+            for option_tuple in option_tuples
+        }
+        if not matched_options <= compatible_aliases:
+            return option_tuples
+        for option_tuple in option_tuples:
+            if len(option_tuple) > 1 and option_tuple[1] == '--session-read-only':
+                return [option_tuple]
+        return [option_tuples[0]]
+
+    def _rewrite_compatible_alias_conflict_message(self, message):
+        if (
+            not message
+            or 'not allowed with argument' not in message
+            or not self._raw_arg_strings
+        ):
+            return message
+
+        used_options = self._get_used_compatible_alias_option_strings()
+        if not used_options:
+            return message
+
+        for action, used_option_string in used_options.items():
+            action_name = '/'.join(action.option_strings)
+            message = message.replace(action_name, used_option_string)
+        return message
+
+    def _get_used_compatible_alias_option_strings(self):
+        used_options = {}
+        for arg_string in self._raw_arg_strings:
+            if arg_string == '--':
+                break
+            option_string = arg_string.split('=', 1)[0]
+            if (
+                not option_string.startswith(tuple(self.prefix_chars))
+                or option_string in self.prefix_chars
+            ):
+                continue
+            action = self._option_string_actions.get(option_string)
+            matched_option_string = option_string
+            if action is None:
+                try:
+                    option_tuples = self._get_option_tuples(option_string)
+                except argparse.ArgumentError:
+                    continue
+                if len(option_tuples) != 1 or len(option_tuples[0]) < 2:
+                    continue
+                action, matched_option_string = option_tuples[0][:2]
+
+            compatible_aliases = self._compatible_same_action_option_aliases.get(
+                action.dest
+            )
+            if not compatible_aliases:
+                continue
+
+            if action not in used_options:
+                used_options[action] = (
+                    option_string
+                    if option_string in compatible_aliases
+                    else matched_option_string
+                )
+
+        return used_options
 
     # noinspection PyMethodOverriding
     def parse_args(
@@ -103,7 +220,13 @@ class BaseHTTPieArgumentParser(argparse.ArgumentParser):
             and not self.env.stdin_isatty
         )
         self.has_input_data = self.has_stdin_data or getattr(self.args, 'raw', None) is not None
+        self._remove_internal_option_markers()
         return self.args
+
+    def _remove_internal_option_markers(self):
+        for name in vars(self.args).copy():
+            if name.startswith('_') and name.endswith('_option_string'):
+                delattr(self.args, name)
 
     # noinspection PyShadowingBuiltins
     def _print_message(self, message, file=None):
@@ -191,6 +314,7 @@ class HTTPieArgumentParser(BaseHTTPieArgumentParser):
             if self.args.multipart:
                 self.error('cannot combine --compress and --multipart')
 
+        self._remove_internal_option_markers()
         return self.args
 
     def _process_request_type(self):
@@ -598,6 +722,7 @@ class HTTPieArgumentParser(BaseHTTPieArgumentParser):
     def error(self, message):
         """Prints a usage message incorporating the message to stderr and
         exits."""
+        message = self._rewrite_compatible_alias_conflict_message(message)
         self.print_usage(sys.stderr)
         self.env.rich_error_console.print(
             dedent(

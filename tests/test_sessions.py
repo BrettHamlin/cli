@@ -148,6 +148,22 @@ class TestSessionFlow(SessionTestBase):
         # Should be the same as before r3.
         assert r2.json == r4.json
 
+    def test_session_ro_no_file_modification_and_session_ro_read_only_save_gate(self, httpbin):
+        # harness:criterion=c-session-ro-no-file-modification,c-session-ro-read-only-save-gate
+        self.start_session(httpbin)
+        [session_path] = self.config_dir.glob('**/test.json')
+        original_mtime = session_path.stat().st_mtime_ns
+        original_contents = session_path.read_bytes()
+
+        r = http('--follow', '--session-ro=test',
+                 '--auth=username:password2', 'GET',
+                 httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert session_path.stat().st_mtime_ns == original_mtime
+        assert session_path.read_bytes() == original_contents
+
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)
 
