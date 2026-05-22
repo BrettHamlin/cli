@@ -1,8 +1,10 @@
 import json
 import os
+import re
 import shutil
 from contextlib import contextmanager
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from unittest import mock
 from pathlib import Path
 from typing import Iterator
@@ -20,6 +22,19 @@ from httpie.utils import get_expired_cookies
 from .test_auth_plugins import basic_auth
 from .utils import DUMMY_HOST, HTTP_OK, MockEnvironment, http, mk_config_dir
 from base64 import b64encode
+
+
+DATE_HEADER_RE = re.compile(r'^Date: (?P<value>.+)$', re.MULTILINE)
+
+
+def normalize_response_date_headers(response):
+    dates = []
+
+    def replace_date_header(match):
+        dates.append(parsedate_to_datetime(match.group('value')))
+        return 'Date: <normalized>'
+
+    return DATE_HEADER_RE.sub(replace_date_header, response), dates
 
 
 class SessionTestBase:
@@ -194,7 +209,16 @@ class TestSessionFlow(SessionTestBase):
         assert HTTP_OK in read_only_response
         assert HTTP_OK in session_ro_response
 
-        assert read_only_response == session_ro_response
+        normalized_read_only_response, read_only_dates = (
+            normalize_response_date_headers(read_only_response)
+        )
+        normalized_session_ro_response, session_ro_dates = (
+            normalize_response_date_headers(session_ro_response)
+        )
+        assert normalized_read_only_response == normalized_session_ro_response
+        assert len(read_only_dates) == len(session_ro_dates)
+        for read_only_date, session_ro_date in zip(read_only_dates, session_ro_dates):
+            assert abs((read_only_date - session_ro_date).total_seconds()) <= 2
         assert self.snapshot_session_file(read_only_path) == read_only_before
         assert self.snapshot_session_file(session_ro_path) == session_ro_before
 

@@ -211,6 +211,25 @@ def test_session_read_only_destination_is_unchanged():
     assert args.session_read_only == 'myname'
 
 
+@pytest.mark.parametrize('option_args', [
+    ['--session-read-only', 'myname'],
+    ['--session-read-only=myname'],
+    ['--session-', 'myname'],
+    ['--session-r', 'myname'],
+    ['--session-re', 'myname'],
+    ['--session-ro', 'myname'],
+    ['--session-ro=myname'],
+])
+def test_session_read_only_aliases_and_prefixes_share_destination(option_args):
+    # harness:criterion=c-session-ro-parser-sets-destination,c-session-read-only-parser-destination-unchanged,c-session-ro-argparse-destination-name
+    args = parser.parse_args(
+        args=[*option_args, 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'myname'
+    assert not hasattr(args, 'session_ro')
+
+
 def test_session_ro_appears_in_help_output():
     # harness:criterion=c-session-ro-help-registered,c-session-read-only-help-preserved
     r = http('--help', tolerate_error_exit_status=True)
@@ -225,6 +244,27 @@ def test_session_ro_preserves_session_mutual_exclusion():
             args=[
                 '--session', 'foo',
                 '--session-ro', 'bar',
+                'GET', 'http://example.com'
+            ],
+            env=MockEnvironment()
+    )
+    assert exc_info.value.code != 0
+
+
+@pytest.mark.parametrize('read_only_option', [
+    '--session-read-only',
+    '--session-',
+    '--session-r',
+    '--session-re',
+    '--session-ro',
+])
+def test_session_read_only_aliases_preserve_session_mutual_exclusion(read_only_option):
+    # harness:criterion=c-session-mutual-exclusion-preserved
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=[
+                '--session', 'foo',
+                read_only_option, 'bar',
                 'GET', 'http://example.com'
             ],
             env=MockEnvironment()
