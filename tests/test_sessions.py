@@ -88,6 +88,11 @@ class TestSessionFlow(SessionTestBase):
         )
         assert HTTP_OK in r1
 
+    def get_named_session_path(self, session_name='test'):
+        paths = list(self.config_dir.rglob(f'{session_name}.json'))
+        assert len(paths) == 1
+        return paths[0]
+
     def test_session_created_and_reused(self, httpbin):
         self.start_session(httpbin)
         # Verify that the session created in setup_method() has been used.
@@ -122,6 +127,7 @@ class TestSessionFlow(SessionTestBase):
                 != r4.json['headers']['Authorization'])
 
     def test_session_read_only(self, httpbin):
+        # harness:criterion=c-session-read-only-canonical-behavior-preserved
         self.start_session(httpbin)
         # Get a response from the original session.
         r2 = http('--session=test', 'GET', httpbin + '/get',
@@ -148,6 +154,37 @@ class TestSessionFlow(SessionTestBase):
         # Should be the same as before r3.
         assert r2.json == r4.json
 
+    def test_session_ro_no_writeback_existing_session(self, httpbin):
+        # harness:criterion=c-session-ro-no-writeback-existing-session
+        self.start_session(httpbin)
+        session_path = self.get_named_session_path()
+        before = session_path.read_bytes()
+
+        r = http(
+            '--follow',
+            '--session-ro=test',
+            '--auth=username:password2',
+            'GET',
+            httpbin + '/cookies/set?hello=world2',
+            'Hello:World2',
+            env=self.env()
+        )
+
+        assert HTTP_OK in r
+        assert session_path.read_bytes() == before
+
+    def test_session_ro_loads_existing_session_data(self, httpbin):
+        # harness:criterion=c-session-ro-loads-existing-session-data
+        self.start_session(httpbin)
+
+        r = http('--session-ro=test', 'GET', httpbin + '/get',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert r.json['headers']['Hello'] == 'World'
+        assert r.json['headers']['Cookie'] == 'hello=world'
+        assert 'Basic ' in r.json['headers']['Authorization']
+
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)
 
@@ -169,6 +206,18 @@ class TestSessionFlow(SessionTestBase):
 
 class TestSession(SessionTestBase):
     """Stand-alone session tests."""
+
+    def test_session_ro_new_session_no_file_created(self, httpbin):
+        # harness:criterion=c-session-ro-new-session-no-file-created
+        self.start_session(httpbin)
+        session_name = 'missing-ro'
+        assert not list(self.config_dir.rglob(f'{session_name}.json'))
+
+        r = http('--session-ro=missing-ro', 'GET', httpbin + '/get',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert not list(self.config_dir.rglob(f'{session_name}.json'))
 
     def test_session_ignored_header_prefixes(self, httpbin):
         self.start_session(httpbin)

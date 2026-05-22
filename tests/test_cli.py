@@ -192,6 +192,81 @@ def test_url_colon_slash_slash_only():
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
 
 
+def test_session_ro_dest_and_canonical_dest():
+    # harness:criterion=c-session-ro-dest-equals-session-read-only,c-session-read-only-dest-unchanged,c-definition-single-add-argument-call
+    env = MockEnvironment()
+    try:
+        args = parser.parse_args(
+            args=['--session-ro', 'myname', 'GET', 'http://example.com'],
+            env=env
+        )
+        assert args.session_read_only == 'myname'
+        assert not hasattr(args, 'session_ro')
+    finally:
+        env.cleanup()
+
+    env = MockEnvironment()
+    try:
+        args = parser.parse_args(
+            args=['--session-read-only', 'myname', 'GET', 'http://example.com'],
+            env=env
+        )
+        assert args.session_read_only == 'myname'
+        assert not hasattr(args, 'session_ro')
+    finally:
+        env.cleanup()
+
+
+def test_session_ro_help_output_contains_alias():
+    # harness:criterion=c-session-ro-help-output-contains-alias
+    r = http('--help', tolerate_error_exit_status=True)
+    assert r.exit_status == ExitStatus.SUCCESS
+    assert '--session-ro' in r
+
+
+def test_session_ro_validator_applied():
+    # harness:criterion=c-session-ro-validator-applied
+    env = MockEnvironment()
+    try:
+        with pytest.raises(SystemExit) as excinfo:
+            parser.parse_args(
+                args=['--session-ro', 'bad name', 'GET', 'http://example.com'],
+                env=env
+            )
+        env.stderr.seek(0)
+        stderr = env.stderr.read()
+    finally:
+        env.cleanup()
+
+    assert excinfo.value.code != 0
+    assert 'Session name contains invalid characters.' in stderr
+
+
+def test_session_ro_mutually_exclusive_with_session():
+    # harness:criterion=c-session-ro-mutually-exclusive-with-session
+    env = MockEnvironment()
+    try:
+        with pytest.raises(SystemExit) as excinfo:
+            parser.parse_args(
+                args=[
+                    '--session=foo',
+                    '--session-ro=bar',
+                    'GET',
+                    'http://example.com'
+                ],
+                env=env
+            )
+        env.stderr.seek(0)
+        stderr = env.stderr.read()
+    finally:
+        env.cleanup()
+
+    assert excinfo.value.code != 0
+    assert '--session-ro' in stderr
+    assert '--session' in stderr
+    assert 'not allowed with argument' in stderr
+
+
 class TestLocalhostShorthand:
     def test_expand_localhost_shorthand(self):
         args = parser.parse_args(args=[':'], env=MockEnvironment())

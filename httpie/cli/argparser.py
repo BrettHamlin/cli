@@ -86,6 +86,34 @@ class BaseHTTPieArgumentParser(argparse.ArgumentParser):
         self.has_stdin_data = False
         self.has_input_data = False
 
+    def _get_option_tuples(self, option_string):
+        option_tuples = super()._get_option_tuples(option_string)
+        if len(option_tuples) <= 1:
+            return option_tuples
+
+        # Keep argparse's historical abbreviation behavior for the
+        # --session-read-only/--session-ro aliases, which intentionally share
+        # one action but otherwise look ambiguous to argparse's internals.
+        session_read_only_aliases = {'--session-read-only', '--session-ro'}
+        matched_options = {
+            option_tuple[1]
+            for option_tuple in option_tuples
+            if len(option_tuple) >= 2
+        }
+        matched_actions = {
+            option_tuple[0]
+            for option_tuple in option_tuples
+            if option_tuple
+        }
+        if (
+            matched_options.issubset(session_read_only_aliases)
+            and len(matched_options) == len(option_tuples)
+            and len(matched_actions) == 1
+        ):
+            return [option_tuples[0]]
+
+        return option_tuples
+
     # noinspection PyMethodOverriding
     def parse_args(
         self,
