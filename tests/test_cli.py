@@ -204,6 +204,7 @@ class TestSessionReadOnlyAlias:
         assert hasattr(args, 'session_read_only')
         assert args.session_read_only == 'myname'
         assert not hasattr(args, 'session_ro')
+        assert 'session_ro' not in vars(args)
 
     def test_session_read_only_dest_is_unchanged(self):
         # harness:criterion=c-session-read-only-dest-unchanged

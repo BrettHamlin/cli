@@ -34,7 +34,7 @@ class SessionNameValidator:
         # Session name can be a path or just a name.
         if (os.path.sep not in value
                 and not VALID_SESSION_NAME_PATTERN.search(value)):
-            raise argparse.ArgumentError(None, self.error_message)
+            raise argparse.ArgumentTypeError(self.error_message)
         return value
 
 
