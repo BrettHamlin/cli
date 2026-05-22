@@ -1,3 +1,4 @@
+from httpie.cli.definition import options as httpie_options
 from httpie.cli.options import ParserSpec, Qualifiers
 
 
@@ -61,3 +62,15 @@ def test_parser_serialization():
             },
         ],
     }
+
+
+def test_session_ro_hidden_from_parser_schema():
+    # harness:criterion=c-session-ro-not-in-parser-schema
+    visible_options = [
+        option
+        for group in httpie_options.serialize()['groups']
+        for argument in group['args']
+        for option in argument['options']
+    ]
+    assert '--session-read-only' in visible_options
+    assert '--session-ro' not in visible_options
