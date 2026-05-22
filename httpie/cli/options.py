@@ -187,7 +187,7 @@ ARGPARSE_QUALIFIER_MAP = {
     Qualifiers.ZERO_OR_MORE: argparse.ZERO_OR_MORE,
     Qualifiers.ONE_OR_MORE: argparse.ONE_OR_MORE
 }
-ARGPARSE_IGNORE_KEYS = ('short_help', 'nested_options')
+ARGPARSE_IGNORE_KEYS = ('short_help', 'nested_options', 'parser_only_aliases')
 
 
 def to_argparse(
@@ -211,12 +211,20 @@ def to_argparse(
             concrete_group = concrete_group.add_mutually_exclusive_group(required=False)
 
         for abstract_argument in abstract_group.arguments:
-            concrete_group.add_argument(
+            parser_only_aliases = abstract_argument.configuration.get(
+                'parser_only_aliases', ()
+            )
+            aliases = [
                 *abstract_argument.aliases,
+                *parser_only_aliases,
+            ]
+            action = concrete_group.add_argument(
+                *aliases,
                 **drop_keys(map_qualifiers(
                     abstract_argument.configuration, ARGPARSE_QUALIFIER_MAP
                 ), ARGPARSE_IGNORE_KEYS)
             )
+            action.parser_only_aliases = parser_only_aliases
 
     return concrete_parser
 

@@ -75,6 +75,22 @@ class HTTPieHelpFormatter(RawDescriptionHelpFormatter):
             prefix="usage:\n    "
         )
 
+    def _format_action_invocation(self, action):
+        parser_only_aliases = getattr(action, 'parser_only_aliases', ())
+        if not parser_only_aliases:
+            return super()._format_action_invocation(action)
+
+        option_strings = action.option_strings
+        action.option_strings = [
+            option_string
+            for option_string in option_strings
+            if option_string not in parser_only_aliases
+        ]
+        try:
+            return super()._format_action_invocation(action)
+        finally:
+            action.option_strings = option_strings
+
 
 # TODO: refactor and design type-annotated data structures
 #       for raw args + parsed args and keep things immutable.
@@ -123,6 +139,22 @@ class BaseHTTPieArgumentParser(argparse.ArgumentParser):
         if not hasattr(file, 'buffer') and isinstance(message, str):
             message = message.encode(env.stdout_encoding)
         super()._print_message(message, file)
+
+    def _get_option_tuples(self, option_string):
+        option_tuples = super()._get_option_tuples(option_string)
+        unique_by_action = []
+        seen_actions = set()
+
+        # Parser-only aliases should not make existing same-action
+        # abbreviations ambiguous.
+        for option_tuple in option_tuples:
+            action = option_tuple[0]
+            if action in seen_actions:
+                continue
+            unique_by_action.append(option_tuple)
+            seen_actions.add(action)
+
+        return unique_by_action
 
 
 class HTTPieManagerArgumentParser(BaseHTTPieArgumentParser):

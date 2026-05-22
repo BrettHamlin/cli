@@ -192,6 +192,55 @@ def test_url_colon_slash_slash_only():
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
 
 
+def test_session_ro_sets_session_read_only_destination():
+    # harness:criterion=c-session-ro-parser-dest,c-session-ro-accepts-session-name-validator
+    args = parser.parse_args(
+        args=['--session-ro', 'foo', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'foo'
+    assert args.session is None
+
+
+def test_session_ro_accepts_valid_session_name():
+    # harness:criterion=c-session-ro-accepts-session-name-validator
+    args = parser.parse_args(
+        args=['--session-ro', 'mysession', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'mysession'
+
+
+def test_session_read_only_canonical_still_accepted():
+    # harness:criterion=c-session-read-only-canonical-still-accepted
+    args = parser.parse_args(
+        args=['--session-read-only', 'foo', 'http://example.com'],
+        env=MockEnvironment()
+    )
+    assert args.session_read_only == 'foo'
+
+
+def test_session_ro_is_mutually_exclusive_with_session():
+    # harness:criterion=c-session-ro-mutex-with-session
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=[
+                '--session-ro', 'foo',
+                '--session', 'bar',
+                'http://example.com'
+            ],
+            env=MockEnvironment()
+        )
+    assert exc_info.value.code == 2
+
+
+def test_session_ro_hidden_from_rich_help():
+    # harness:criterion=c-session-ro-hidden-from-rich-help
+    result = http('--help', tolerate_error_exit_status=True)
+    assert result.exit_status == ExitStatus.SUCCESS
+    assert '--session-ro' not in result
+
+
 class TestLocalhostShorthand:
     def test_expand_localhost_shorthand(self):
         args = parser.parse_args(args=[':'], env=MockEnvironment())

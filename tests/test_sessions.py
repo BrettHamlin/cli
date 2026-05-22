@@ -201,6 +201,52 @@ class TestSession(SessionTestBase):
         assert HTTP_OK in r2
         assert r2.json['headers']['Foo'] == 'Bar'
 
+    def test_session_ro_existing_session_does_not_write_back(self, httpbin):
+        # harness:criterion=c-session-ro-no-writeback
+        self.start_session(httpbin)
+        session_path = self.config_dir / 'session-ro.json'
+        r1 = http('--follow', '--session', str(session_path),
+                  'GET', httpbin + '/cookies/set?hello=world',
+                  'Hello:World', env=self.env())
+        assert HTTP_OK in r1
+        original_session = session_path.read_bytes()
+
+        r2 = http('--follow', '--session-ro', str(session_path),
+                  '--auth=username:password2',
+                  'GET', httpbin + '/cookies/set?hello=world2',
+                  'Hello:World2', env=self.env())
+        assert HTTP_OK in r2
+        assert session_path.read_bytes() == original_session
+
+    def test_session_read_only_existing_session_still_does_not_write_back(self, httpbin):
+        # harness:criterion=c-session-read-only-no-writeback-unchanged
+        self.start_session(httpbin)
+        session_path = self.config_dir / 'session-read-only.json'
+        r1 = http('--follow', '--session', str(session_path),
+                  'GET', httpbin + '/cookies/set?hello=world',
+                  'Hello:World', env=self.env())
+        assert HTTP_OK in r1
+        original_session = session_path.read_bytes()
+
+        r2 = http('--follow', '--session-read-only', str(session_path),
+                  '--auth=username:password2',
+                  'GET', httpbin + '/cookies/set?hello=world2',
+                  'Hello:World2', env=self.env())
+        assert HTTP_OK in r2
+        assert session_path.read_bytes() == original_session
+
+    def test_session_ro_creates_new_session_on_first_use(self, httpbin):
+        # harness:criterion=c-session-ro-new-session-created-on-first-use
+        self.start_session(httpbin)
+        session_path = self.config_dir / 'new-session-ro.json'
+        assert not session_path.exists()
+
+        r = http('--session-ro', str(session_path), 'GET',
+                 httpbin + '/get', env=self.env())
+
+        assert HTTP_OK in r
+        assert session_path.exists()
+
     def test_session_with_cookie_followed_by_another_header(self, httpbin):
         """
         Make sure headers don’t get mutated — <https://github.com/httpie/cli/issues/1126>
