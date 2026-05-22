@@ -49,6 +49,7 @@ stages:
 
 ci:
   provider: github-actions
+  workflow_ref: "master"
   build:
     workflow: ".github/workflows/gridfire-build.yml"
     timeout_sec: 1800
@@ -76,4 +77,3 @@ inner_loop:
   test_max: 3
   build_test_total_max: 5
   budget_reset_on_user_changes: true
-
