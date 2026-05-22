@@ -148,6 +148,24 @@ class TestSessionFlow(SessionTestBase):
         # Should be the same as before r3.
         assert r2.json == r4.json
 
+    @pytest.mark.parametrize('option', [
+        '--session-ro',
+        '--session-read-only',
+    ])
+    def test_session_read_only_options_do_not_modify_session_file(self, option, httpbin):
+        # harness:criterion=c-session-ro-does-not-modify-session-file,c-session-read-only-does-not-modify-session-file,c-session-ro-no-runtime-logic-change
+        self.start_session(httpbin)
+        session_path = next(self.config_dir.glob('sessions/*/test.json'))
+        original = session_path.read_bytes()
+
+        r = http('--follow', f'{option}=test',
+                 '--auth=username:password2', 'GET',
+                 httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert session_path.read_bytes() == original
+
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)
 

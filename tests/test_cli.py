@@ -1,5 +1,6 @@
 """CLI argument parsing related tests."""
 import argparse
+from pathlib import Path
 
 import pytest
 from requests.exceptions import InvalidSchema
@@ -17,6 +18,9 @@ from .fixtures import (
     JSON_FILE_PATH_ARG,
 )
 from .utils import HTTP_OK, MockEnvironment, StdinBytesIO, http
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestItemParsing:
@@ -190,6 +194,83 @@ def test_url_leading_colon_slash_slash(program_name, url_arg, parsed_url):
 def test_url_colon_slash_slash_only():
     r = http('://', tolerate_error_exit_status=True)
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
+
+
+class TestSessionReadOnlyAlias:
+
+    def test_session_ro_sets_session_read_only_destination(self):
+        # harness:criterion=c-session-ro-parses-to-session-read-only,c-session-ro-in-definition-with-same-dest
+        args = parser.parse_args(
+            args=['--session-ro', 'myname'],
+            env=MockEnvironment()
+        )
+        assert args.session_read_only == 'myname'
+
+    def test_session_read_only_still_sets_session_read_only_destination(self):
+        # harness:criterion=c-session-read-only-still-parses,c-session-ro-in-definition-with-same-dest
+        args = parser.parse_args(
+            args=['--session-read-only', 'myname'],
+            env=MockEnvironment()
+        )
+        assert args.session_read_only == 'myname'
+
+    def test_session_ro_is_mutually_exclusive_with_session(self):
+        # harness:criterion=c-session-ro-mutually-exclusive-with-session
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(
+                args=['--session', 'mysession', '--session-ro', 'myname'],
+                env=MockEnvironment()
+            )
+
+        assert exc_info.value.code != 0
+
+    def test_session_ro_uses_session_name_validator(self):
+        # harness:criterion=c-session-ro-validator-applied
+        invalid_session_name = 'bad name'
+        errors = []
+
+        for option in ['--session-ro', '--session-read-only']:
+            with pytest.raises(SystemExit) as exc_info:
+                parser.parse_args(
+                    args=[option, invalid_session_name],
+                    env=MockEnvironment()
+                )
+            assert exc_info.value.code != 0
+            errors.append(type(exc_info.value))
+
+        assert errors == [SystemExit, SystemExit]
+
+    def test_session_ro_appears_in_help_output(self):
+        # harness:criterion=c-session-ro-appears-in-help-output,c-session-ro-in-definition-with-same-dest
+        r = http('--help', tolerate_error_exit_status=True)
+
+        assert r.exit_status == ExitStatus.SUCCESS
+        matching_lines = [
+            line for line in r.splitlines()
+            if '--session-ro' in line
+        ]
+        assert matching_lines
+        assert any('--session-read-only' in line for line in matching_lines)
+
+    @pytest.mark.parametrize('relative_path', [
+        'extras/httpie-completion.bash',
+        'extras/httpie-completion.fish',
+        'extras/man/http.1',
+        'extras/man/https.1',
+    ])
+    def test_session_ro_is_in_generated_user_artifacts(self, relative_path):
+        # harness:criterion=c-session-ro-in-bash-completion,c-session-ro-in-fish-completion,c-session-ro-in-http-man-page,c-session-ro-in-https-man-page
+        assert '--session-ro' in (REPO_ROOT / relative_path).read_text()
+
+    def test_session_ro_is_documented_in_readonly_session_section(self):
+        # harness:criterion=c-session-ro-documented-in-readme
+        readme = (REPO_ROOT / 'docs/README.md').read_text()
+        section_start = readme.index('### Readonly session')
+        next_section_start = readme.index('\n### ', section_start + 1)
+        readonly_session_section = readme[section_start:next_section_start]
+
+        assert '--session-read-only' in readonly_session_section
+        assert '--session-ro' in readonly_session_section
 
 
 class TestLocalhostShorthand:
