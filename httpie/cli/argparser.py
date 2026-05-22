@@ -105,6 +105,43 @@ class BaseHTTPieArgumentParser(argparse.ArgumentParser):
         self.has_input_data = self.has_stdin_data or getattr(self.args, 'raw', None) is not None
         return self.args
 
+    def _get_option_tuples(self, option_string):
+        option_tuples = super()._get_option_tuples(option_string)
+        if len(option_tuples) <= 1:
+            return option_tuples
+
+        # Preserve existing abbreviations for --session-read-only after adding
+        # --session-ro as a same-action alias.
+        session_read_only_aliases = {'--session-read-only', '--session-ro'}
+        matching_option_strings = {
+            option_tuple[1]
+            for option_tuple in option_tuples
+            if len(option_tuple) > 1
+        }
+        matching_action_ids = {
+            id(option_tuple[0])
+            for option_tuple in option_tuples
+            if len(option_tuple) > 1
+        }
+        first_action = option_tuples[0][0] if option_tuples[0] else None
+        if (
+            matching_option_strings <= session_read_only_aliases
+            and len(matching_action_ids) == 1
+            and getattr(first_action, 'dest', None) == 'session_read_only'
+        ):
+            return [
+                next(
+                    option_tuple
+                    for option_tuple in option_tuples
+                    if (
+                        len(option_tuple) > 1
+                        and option_tuple[1] == '--session-read-only'
+                    )
+                )
+            ]
+
+        return option_tuples
+
     # noinspection PyShadowingBuiltins
     def _print_message(self, message, file=None):
         # Sneak in our stderr/stdout.
