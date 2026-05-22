@@ -213,6 +213,50 @@ def test_session_read_only_long_form_still_maps_to_session_read_only_dest():
     assert args.session_read_only == 'MYNAME'
 
 
+@pytest.mark.parametrize('session_args', [
+    ['--session-read-only=MYNAME'],
+    ['--session-ro=MYNAME'],
+    ['--session-r', 'MYNAME'],
+    ['--session-r=MYNAME'],
+    ['--session-', 'MYNAME'],
+    ['--session-=MYNAME'],
+])
+def test_session_read_only_alias_equals_and_existing_prefix_forms(session_args):
+    # harness:criterion=c-session-ro-maps-to-dest,c-session-read-only-long-form-unchanged,c-session-ro-dest-attribute-name
+    args = parser.parse_args(
+        args=[*session_args, 'GET', 'http://example.com'],
+        env=MockEnvironment()
+    )
+
+    assert args.session_read_only == 'MYNAME'
+
+
+def test_session_ro_after_option_terminator_is_positional_url():
+    # harness:criterion=c-session-ro-maps-to-dest,c-session-ro-dest-attribute-name
+    args = parser.parse_args(args=['--', '--session-ro'], env=MockEnvironment())
+
+    assert args.session_read_only is None
+    assert args.url == 'http://--session-ro'
+
+
+def test_session_ro_option_matching_preserves_unrelated_ambiguity():
+    # harness:criterion=c-session-read-only-long-form-unchanged
+    env = MockEnvironment()
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(
+            args=['--st', 'GET', 'http://example.com'],
+            env=env
+        )
+
+    env.stderr.seek(0)
+    stderr = env.stderr.read()
+    assert exc_info.value.code != 0
+    assert 'ambiguous option: --st could match' in stderr
+    assert '--style' in stderr
+    assert '--stream' in stderr
+
+
 def test_session_ro_incompatible_with_session():
     # harness:criterion=c-session-ro-incompatible-with-session
     env = MockEnvironment()
