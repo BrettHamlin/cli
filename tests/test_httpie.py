@@ -34,9 +34,12 @@ def test_debug():
 
 
 def test_help():
+    # harness:criterion=c-session-ro-in-help-output
     r = http('--help', tolerate_error_exit_status=True)
     assert r.exit_status == ExitStatus.SUCCESS
     assert 'https://github.com/httpie/cli/issues' in r
+    assert '--session-read-only' in r
+    assert '--session-ro' in r
 
 
 def test_version():

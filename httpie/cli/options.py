@@ -188,6 +188,7 @@ ARGPARSE_QUALIFIER_MAP = {
     Qualifiers.ONE_OR_MORE: argparse.ONE_OR_MORE
 }
 ARGPARSE_IGNORE_KEYS = ('short_help', 'nested_options')
+ARGPARSE_PRIVATE_KEYS = ARGPARSE_IGNORE_KEYS + ('hidden_aliases',)
 
 
 def to_argparse(
@@ -211,12 +212,18 @@ def to_argparse(
             concrete_group = concrete_group.add_mutually_exclusive_group(required=False)
 
         for abstract_argument in abstract_group.arguments:
-            concrete_group.add_argument(
-                *abstract_argument.aliases,
-                **drop_keys(map_qualifiers(
-                    abstract_argument.configuration, ARGPARSE_QUALIFIER_MAP
-                ), ARGPARSE_IGNORE_KEYS)
+            configuration = map_qualifiers(
+                abstract_argument.configuration, ARGPARSE_QUALIFIER_MAP
             )
+            hidden_aliases = configuration.get('hidden_aliases', ())
+            concrete_argument = concrete_group.add_argument(
+                *abstract_argument.aliases,
+                **drop_keys(configuration, ARGPARSE_PRIVATE_KEYS)
+            )
+            for hidden_alias in hidden_aliases:
+                if hidden_alias in concrete_parser._option_string_actions:
+                    raise ValueError(f'conflicting hidden alias: {hidden_alias}')
+                concrete_parser._option_string_actions[hidden_alias] = concrete_argument
 
     return concrete_parser
 

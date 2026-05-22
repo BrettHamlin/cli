@@ -607,6 +607,8 @@ sessions.add_argument(
 )
 sessions.add_argument(
     '--session-read-only',
+    '--session-ro',
+    hidden_aliases=('--session-r', '--session-'),
     metavar='SESSION_NAME_OR_PATH',
     type=session_name_validator,
     short_help='Create or read a session without updating it',

@@ -15,8 +15,8 @@ from httpie.encoding import UTF8
 from httpie.plugins import AuthPlugin
 from httpie.plugins.builtin import HTTPBasicAuth
 from httpie.plugins.registry import plugin_manager
-from httpie.sessions import Session
-from httpie.utils import get_expired_cookies
+from httpie.sessions import Session, session_hostname_to_dirname
+from httpie.utils import get_expired_cookies, url_as_host
 from .test_auth_plugins import basic_auth
 from .utils import DUMMY_HOST, HTTP_OK, MockEnvironment, http, mk_config_dir
 from base64 import b64encode
@@ -122,11 +122,17 @@ class TestSessionFlow(SessionTestBase):
                 != r4.json['headers']['Authorization'])
 
     def test_session_read_only(self, httpbin):
+        # harness:criterion=c-session-read-only-no-writeback-unchanged
         self.start_session(httpbin)
         # Get a response from the original session.
         r2 = http('--session=test', 'GET', httpbin + '/get',
                   env=self.env())
         assert HTTP_OK in r2
+        session_path = self.config_dir / session_hostname_to_dirname(
+            url_as_host(httpbin + '/get'), 'test'
+        )
+        original_content = session_path.read_text(encoding=UTF8)
+        original_mtime_ns = session_path.stat().st_mtime_ns
 
         # Make a request modifying the session data but
         # with --session-read-only.
@@ -135,6 +141,8 @@ class TestSessionFlow(SessionTestBase):
                   httpbin + '/cookies/set?hello=world2', 'Hello:World2',
                   env=self.env())
         assert HTTP_OK in r3
+        assert session_path.read_text(encoding=UTF8) == original_content
+        assert session_path.stat().st_mtime_ns == original_mtime_ns
 
         # Get a response from the updated session.
         r4 = http('--session=test', 'GET', httpbin + '/get',
@@ -147,6 +155,40 @@ class TestSessionFlow(SessionTestBase):
 
         # Should be the same as before r3.
         assert r2.json == r4.json
+
+    def test_session_ro_does_not_write_back_existing_session(self, httpbin):
+        # harness:criterion=c-session-ro-no-writeback-existing
+        self.start_session(httpbin)
+        session_path = self.config_dir / session_hostname_to_dirname(
+            url_as_host(httpbin + '/get'), 'test'
+        )
+        original_content = session_path.read_text(encoding=UTF8)
+        original_mtime_ns = session_path.stat().st_mtime_ns
+
+        r = http('--follow', '--session-ro=test',
+                 '--auth=username:password2', 'GET',
+                 httpbin + '/cookies/set?hello=world2', 'Hello:World2',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert session_path.read_text(encoding=UTF8) == original_content
+        assert session_path.stat().st_mtime_ns == original_mtime_ns
+
+    def test_session_ro_first_use_creates_file(self, httpbin):
+        # harness:criterion=c-session-ro-first-use-creates-file
+        self.start_session(httpbin)
+        session_name = 'read-only-first-use'
+        session_path = self.config_dir / session_hostname_to_dirname(
+            url_as_host(httpbin + '/get'), session_name
+        )
+
+        assert not session_path.exists()
+
+        r = http('--session-ro', session_name, 'GET', httpbin + '/get',
+                 env=self.env())
+
+        assert HTTP_OK in r
+        assert session_path.exists()
 
     def test_session_overwrite_header(self, httpbin):
         self.start_session(httpbin)

@@ -192,6 +192,158 @@ def test_url_colon_slash_slash_only():
     assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
 
 
+class TestSessionReadOnlyAlias:
+
+    def test_session_ro_sets_session_read_only_dest(self):
+        # harness:criterion=c-session-ro-sets-dest,c-session-ro-shares-dest-not-separate
+        args = parser.parse_args(
+            args=['--session-ro', 'myname', 'GET', 'http://example.com'],
+            env=MockEnvironment()
+        )
+
+        assert hasattr(args, 'session_read_only')
+        assert args.session_read_only == 'myname'
+        assert not hasattr(args, 'session_ro')
+
+    def test_session_read_only_dest_is_unchanged(self):
+        # harness:criterion=c-session-read-only-dest-unchanged
+        args = parser.parse_args(
+            args=['--session-read-only', 'myname', 'GET', 'http://example.com'],
+            env=MockEnvironment()
+        )
+
+        assert args.session_read_only == 'myname'
+
+    def test_session_ro_is_in_serialized_schema(self):
+        # harness:criterion=c-session-ro-in-serialized-schema
+        read_only_argument = next(
+            argument
+            for group in parser.spec.groups
+            for argument in group.arguments
+            if '--session-read-only' in argument.serialize()['options']
+        )
+
+        options = read_only_argument.serialize()['options']
+
+        assert '--session-read-only' in options
+        assert '--session-ro' in options
+
+    def test_session_ro_is_mutually_exclusive_with_session(self):
+        # harness:criterion=c-session-ro-mutually-exclusive-with-session
+        env = MockEnvironment()
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(
+                args=[
+                    '--session', 'foo',
+                    '--session-ro', 'bar',
+                    'GET', 'http://example.com',
+                ],
+                env=env
+            )
+
+        env.stderr.seek(0)
+        stderr = env.stderr.read()
+        assert exc_info.value.code != 0
+        assert '--session-ro' in stderr
+        assert '--session' in stderr
+        assert 'not allowed with argument' in stderr
+
+    def test_session_ro_uses_session_name_validator(self):
+        # harness:criterion=c-session-ro-session-name-validator
+        invalid_session_name = 'bad$name'
+        validation_error = 'Session name contains invalid characters.'
+        errors = []
+
+        for option in ('--session-ro', '--session-read-only'):
+            env = MockEnvironment()
+            with pytest.raises(SystemExit) as exc_info:
+                parser.parse_args(
+                    args=[
+                        option, invalid_session_name,
+                        'GET', 'http://example.com',
+                    ],
+                    env=env
+                )
+            env.stderr.seek(0)
+            errors.append((exc_info.value.code, env.stderr.read()))
+
+        assert errors[0][0] == errors[1][0] != 0
+        normalized_stderr = [
+            stderr.replace('--session-ro', '--session-read-only')
+            for _, stderr in errors
+        ]
+        assert normalized_stderr[0] == normalized_stderr[1]
+        for option, (_, stderr) in zip(
+            ('--session-ro', '--session-read-only'),
+            errors
+        ):
+            assert option in stderr
+            assert stderr.endswith(f'{validation_error}\n')
+
+    @pytest.mark.parametrize('option', ['--session-r', '--session-'])
+    def test_historical_session_read_only_abbreviations_still_work(self, option):
+        args = parser.parse_args(
+            args=[option, 'myname', 'GET', 'http://example.com'],
+            env=MockEnvironment()
+        )
+
+        assert hasattr(args, 'session_read_only')
+        assert args.session_read_only == 'myname'
+        assert not hasattr(args, 'session_ro')
+
+    @pytest.mark.parametrize('option', ['--session-r', '--session-'])
+    def test_historical_session_read_only_abbreviations_share_action(self, option):
+        args = parser.parse_args(
+            args=[
+                '--session-read-only', 'first',
+                option, 'second',
+                'GET', 'http://example.com',
+            ],
+            env=MockEnvironment()
+        )
+
+        assert args.session_read_only == 'second'
+
+    @pytest.mark.parametrize('option', ['--session-r', '--session-'])
+    def test_historical_session_ro_abbreviations_are_mutex_with_session(self, option):
+        env = MockEnvironment()
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(
+                args=[
+                    '--session', 'foo',
+                    option, 'bar',
+                    'GET', 'http://example.com',
+                ],
+                env=env
+            )
+
+        env.stderr.seek(0)
+        stderr = env.stderr.read()
+        assert exc_info.value.code != 0
+        assert '--session' in stderr
+        assert 'not allowed with argument' in stderr
+
+    @pytest.mark.parametrize('option', ['--session-r', '--session-'])
+    def test_historical_session_ro_abbrevs_use_validator(self, option):
+        validation_error = 'Session name contains invalid characters.'
+        env = MockEnvironment()
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(
+                args=[
+                    option, 'bad$name',
+                    'GET', 'http://example.com',
+                ],
+                env=env
+            )
+
+        env.stderr.seek(0)
+        assert exc_info.value.code != 0
+        assert env.stderr.read().endswith(f'{validation_error}\n')
+
+
 class TestLocalhostShorthand:
     def test_expand_localhost_shorthand(self):
         args = parser.parse_args(args=[':'], env=MockEnvironment())
